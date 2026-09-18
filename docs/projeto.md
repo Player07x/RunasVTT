@@ -37,7 +37,7 @@ A ideia central, definida pelo usuário na revisão do plano, é que **o VTT nã
 - Ao detectar que estão dentro do VTT, os sites mudam o comportamento: **exportar ficha passa a importar para o VTT**, e **dano e testes são aplicados ao token selecionado**.
 - Fichas, testes, dano e regras continuam sendo calculados **pelos sites** (que usam o `@runas/core`). O VTT nunca reimplementa regra.
 
-**Quem usa:** somente o mestre, em uma máquina. Os jogadores veem a **Vista dos Jogadores**, uma janela limpa, sem HUD. Ela pode ser exibida em um segundo monitor ou TV, ou compartilhada por qualquer ferramenta que capture uma janela (Google Meet, Microsoft Teams, Zoom, Jitsi Meet ou OBS). O VTT não depende de nenhum serviço específico; a transmissão de vídeo do Discord está bloqueada no Brasil e não deve ser tratada como caminho principal.
+**Quem usa:** somente o mestre opera o VTT. Os jogadores assistem pela **Vista dos Jogadores**, uma **página web** sem HUD que o próprio VTT transmite (ADR 0009). Eles abrem um link no navegador: na rede local, ou pela internet com um link público opcional (Cloudflare Quick Tunnel, gratuito e sem conta). A mesma página pode abrir numa TV ou num segundo monitor. Não há dependência do Discord, cuja transmissão de vídeo está bloqueada no Brasil.
 
 **Custo contínuo:** nenhum obrigatório. O app roda localmente, e os serviços da suíte já usam a camada gratuita da Cloudflare.
 
@@ -70,7 +70,7 @@ RunasVTT (Electron 44 · Node 24 · Chromium)
  ├── Preload (src/preload): expõe window.vtt para a interface do VTT
  ├── Interface (src/renderer): React 19 + PixiJS 8 (SceneView, reutilizável na Vista dos Jogadores)
  │     └── DocumentStore: cópia dos documentos, atualizada pelas transmissões do processo principal
- └── [Fase 5] Janela da Vista dos Jogadores (sem HUD)
+ └── [Fase 5] Vista dos Jogadores: servidor somente leitura (HTTP + WebSocket) com projeção filtrada da cena, página web com SceneView { editable: false } e link público opcional (ADR 0009)
 ```
 
 **Pilha:** Electron 44, electron-vite 5, Vite 7, React 19, TypeScript 5.9, Vitest 3, lucide-react. SQLite via `node:sqlite`, embutido no Node 24 do Electron, sem módulo nativo para compilar. Isso foi verificado no runtime real do Electron.
@@ -214,6 +214,7 @@ Registradas em 2026-09-18.
 | M13 | A Mesa do DM usa os tokens do VTT como atores | O VTT é a fonte da verdade dos tokens (ADR 0006) |
 | M14 | Remover a senha do Runas DM: Campanhas e Wiki sem login, token só para o backup | Aplicado no runas-suite (`e226df6`) |
 | M15 | Runas Book: usar apenas o token, sem senha | Aplicado no runas-suite (`9e52973`) |
+| M16 | A Vista dos Jogadores é transmitida por uma **página web**, e não por captura de janela (a transmissão de vídeo do Discord está bloqueada no Brasil) | ADR 0009; Fase 5 passa a ter servidor somente leitura (revisa os ADRs 0001 e 0005) |
 
 ---
 
@@ -226,7 +227,7 @@ Registradas em 2026-09-18.
 | 2 | Canvas essencial: cenas, grade quadrada/hex, tokens, barras PV/PA/PE, régua, tiles, desenhos, notas | RunasVTT | 3–4 sem | **Concluída** (2026-09-18) |
 | 3 | Integração: contrato da ponte, exportar→importar, dano no token selecionado, testes no Registro, Mesa sobre tokens | ambos | 2–3 sem | **Concluída** (2026-09-18) |
 | 4 | Imagem → token: `CHARACTER_VERSION`, migração, editor de token no DM, campo no Tools | runas-suite | 1 sem | **Concluída** (2026-09-18) |
-| 5 | Vista dos Jogadores (janela sem HUD) | RunasVTT | 1–2 sem | Pendente |
+| 5 | Vista dos Jogadores como página web: servidor somente leitura, projeção filtrada, link na rede local com QR code, link público opcional e janela local (ADR 0009) | RunasVTT | 2–3 sem | Pendente |
 | 6 | Paredes, portas, visão, luz e névoa | RunasVTT | 5–8 sem | Pendente |
 | 7 | Áudio local: playlists, loop, fade, canais, sons posicionais | RunasVTT | 1 sem | Pendente |
 | 8 | Regiões simples: teleporte, texto, terreno (opcional) | RunasVTT | 2 sem | Pendente |
@@ -248,6 +249,7 @@ Registradas em 2026-09-18.
 | 0005 | Vista dos Jogadores = janela Electron separada que renderiza a cena sem HUD | M6. Funciona em outro monitor ou TV, ou capturada por qualquer ferramenta de compartilhamento de janela (Meet, Teams, Zoom, Jitsi, OBS). Não depende do Discord, cuja transmissão de vídeo está bloqueada no Brasil. |
 | 0006 | O VTT é a fonte da verdade dos tokens; o token é uma cópia independente da ficha | M13. Evita duas "mesas" divergentes e mantém a regra da Mesa do DM. |
 | 0008 | Cena: documentos normalizados no processo principal, assets por hash via `vtt-asset://` (CORS), `SceneView` imperativo em PixiJS com `unsafe-eval` oficial | Uma única regra de dados, cache seguro e renderizador pronto para a Vista dos Jogadores |
+| 0009 | Vista dos Jogadores como página web transmitida pelo VTT, somente leitura, com projeção filtrada e link público opcional | Preferência do usuário; não depende de serviço de vídeo (Discord bloqueado no Brasil) |
 | 0007 | Electron em vez de Tauri | Chromium embutido e controlado para o navegador integrado, e ecossistema TypeScript |
 
 Os ADRs detalhados ficam em [`docs/adr/`](adr/).
@@ -418,6 +420,7 @@ Atualizado em 2026-09-18.
 | 2026-09-18 | Fase 2 concluída: cenas, grades quadrada e hexagonal, tokens, tiles, desenhos, notas, régua, seleção e arraste, painel de propriedades, importação de imagens por hash (`vtt-asset://`) e ADR 0008. |
 | 2026-09-18 | Fase 1 concluída: navegador integrado com cópia local na mesma origem, sessões suíte/web separadas, atualização automática, modo offline forçado, cópia inicial (`seed:sites`) e teste contra os sites reais (`smoke:browser`). Correções encontradas nos testes: redirecionamento (troca de `session.fetch` por `net.request`), HEAD offline, assets referenciados por CSS, manifesto e service worker, e área da página com altura zero. |
 | 2026-09-18 | Fase 0 concluída: ADRs 0001–0007, AGENTS.md, README, CI, smoke test no Electron e verificação visual (corrigido botão "Mundos" esticado na barra da mesa). |
+| 2026-09-18 | Decisão M16 / ADR 0009: a Vista dos Jogadores passa a ser uma página web transmitida pelo VTT (servidor somente leitura, projeção filtrada, link local com QR code e link público opcional via Cloudflare Quick Tunnel). ADRs 0001 e 0005 revisados; Fase 5 reestimada em 2–3 semanas. |
 | 2026-09-18 | Vista dos Jogadores sem dependência do Discord (transmissão de vídeo bloqueada no Brasil): projeto.md e ADR 0005 listam TV/monitor, Meet, Teams, Zoom, Jitsi e OBS, com requisitos de captura da janela. |
 | 2026-09-18 | Fase 4 concluída: token da ficha (Character v21), editor de token no DM e no Tools, desenho compartilhado em `@runas/vtt-bridge` e tamanho do token no VTT; suíte publicada e teste de ponta a ponta aprovado. |
 | 2026-09-18 | Revisão da Fase 3: corrigidos o arquivo do core que faltava no commit da suíte, as mensagens de erro da ponte, o "Iniciar encontro" dentro do VTT e o espaçamento dos tokens importados; suíte publicada; teste de ponta a ponta contra os sites reais aprovado. |

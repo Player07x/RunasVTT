@@ -1,6 +1,6 @@
 # ADR 0005 — Vista dos Jogadores em janela separada, sem HUD
 
-- **Status:** aceita (2026-09-18) · implementação na Fase 5
+- **Status:** revisada pelo ADR 0009 (2026-09-18): a vista passa a ser uma página web transmitida pelo VTT; a janela local abre essa mesma página. As ferramentas externas abaixo continuam possíveis, mas não são mais o caminho principal.
 
 ## Decisão
 Uma segunda `BrowserWindow` renderiza a cena ativa do ponto de vista dos jogadores: névoa aplicada, tokens e objetos ocultos escondidos, sem menus, painéis nem fichas. O mestre escolhe o monitor ou a tela cheia. O estado vem do processo principal por IPC. A janela não tem controles de edição.
