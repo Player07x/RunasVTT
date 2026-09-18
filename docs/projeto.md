@@ -225,7 +225,7 @@ Registradas em 2026-09-18.
 | 1 | Navegador integrado: abas, sessão persistente, espelho local same-origin, atualização | RunasVTT | 2–3 sem | **Concluída** (2026-09-18). A ponte `runasVTT` foi para a Fase 3, junto do contrato. |
 | 2 | Canvas essencial: cenas, grade quadrada/hex, tokens, barras PV/PA/PE, régua, tiles, desenhos, notas | RunasVTT | 3–4 sem | **Concluída** (2026-09-18) |
 | 3 | Integração: contrato da ponte, exportar→importar, dano no token selecionado, testes no Registro, Mesa sobre tokens | ambos | 2–3 sem | **Concluída** (2026-09-18) |
-| 4 | Imagem → token: `CHARACTER_VERSION`, migração, editor de token no DM, campo no Tools | runas-suite | 1 sem | Pendente |
+| 4 | Imagem → token: `CHARACTER_VERSION`, migração, editor de token no DM, campo no Tools | runas-suite | 1 sem | **Concluída** (2026-09-18) |
 | 5 | Vista dos Jogadores (janela sem HUD) | RunasVTT | 1–2 sem | Pendente |
 | 6 | Paredes, portas, visão, luz e névoa | RunasVTT | 5–8 sem | Pendente |
 | 7 | Áudio local: playlists, loop, fade, canais, sons posicionais | RunasVTT | 1 sem | Pendente |
@@ -263,7 +263,7 @@ Atualizado em 2026-09-18.
 - `9e52973`: Runas Book, área DM só com token. Publicado em `runas-book.pages.dev`.
 - Secrets na Cloudflare: token novo cadastrado no DM e no Book; `RUNAS_DM_CAMPAIGN_PASSWORD` removido pelo usuário. O mesmo token vale nos dois sites (confirmado pelo usuário).
 
-### RunasVTT (Fases 0, 1, 2 e 3 concluídas)
+### RunasVTT (Fases 0 a 4 concluídas)
 
 **Fase 0: fundações**
 - Electron 44.4.2 (Node 24.21), electron-vite 5, Vite 7, React 19, TypeScript 5.9 e Vitest 3.
@@ -356,7 +356,20 @@ Atualizado em 2026-09-18.
   - nenhum erro no console;
   - fora do VTT, o DM segue com "Exportar fichas" e sem ponte.
 
-**Próximo passo:** Fase 4, imagem de token no `Character` (PNG/WebP com transparência, novo `CHARACTER_VERSION`, migração, editor de token no DM e campo no Tools). Hoje o token usa o retrato da ficha.
+**Fase 4: token da ficha**
+- **Formato:** `Character` v21 com `tokenImageDataUrl` (PNG ou WebP com transparência) e `tokenSize` (0,5 a 10 células). Fichas v20 migram com tamanho 1 e sem token; o retrato continua sendo a reserva.
+- **Desenho compartilhado:** `renderTokenImage` e `tokenCrop` em `@runas/vtt-bridge` fazem o recorte circular com borda opcional, ou a imagem livre, com fundo transparente em 400 px, WebP com reserva em PNG. Os dois apps usam as mesmas funções.
+- **DM:** escolher a imagem da ficha abre o editor de token (formato, zoom, enquadramento, borda, tamanho e prévia). Token e tamanho também aparecem na ficha avançada. Cartões, Mesa e encontros mostram o token.
+- **Tools:** campo Token abaixo do retrato 2:3, com o mesmo editor, gravado na seção `token` do IndexedDB (sem ela, o token se perderia ao recarregar).
+- **VTT:** a ponte aceita `tokenSize` (opcional no protocolo 1), e o token é criado e encaixado com esse tamanho.
+- **Problema achado e corrigido nos testes:** a imagem do editor sumia no Tools em desenvolvimento, porque o StrictMode remonta o componente e o endereço `blob:` já tinha sido revogado. Os editores passaram a ler o arquivo como data URL.
+- **Verificação:**
+  - core com 44 testes (incluindo a migração v20 → v21) e vtt-bridge com 7;
+  - commit da suíte testado isoladamente (testes, typecheck, builds e limite do Tools em 676,5 de 700 KB) e publicado;
+  - no navegador: editor do DM (token WebP salvo, tamanho 2, versão 21, cartão com token, campo na ficha avançada) e editor do Tools (token persiste após recarregar);
+  - ponta a ponta no Electron contra o DM publicado: token 2×2 criado no DM chegou ao mapa do VTT com imagem e tamanho.
+
+**Próximo passo:** Fase 5, Vista dos Jogadores (janela sem HUD, com névoa e objetos ocultos respeitados). O `SceneView` já tem o modo `editable: false` para isso.
 
 ---
 
@@ -405,5 +418,6 @@ Atualizado em 2026-09-18.
 | 2026-09-18 | Fase 2 concluída: cenas, grades quadrada e hexagonal, tokens, tiles, desenhos, notas, régua, seleção e arraste, painel de propriedades, importação de imagens por hash (`vtt-asset://`) e ADR 0008. |
 | 2026-09-18 | Fase 1 concluída: navegador integrado com cópia local na mesma origem, sessões suíte/web separadas, atualização automática, modo offline forçado, cópia inicial (`seed:sites`) e teste contra os sites reais (`smoke:browser`). Correções encontradas nos testes: redirecionamento (troca de `session.fetch` por `net.request`), HEAD offline, assets referenciados por CSS, manifesto e service worker, e área da página com altura zero. |
 | 2026-09-18 | Fase 0 concluída: ADRs 0001–0007, AGENTS.md, README, CI, smoke test no Electron e verificação visual (corrigido botão "Mundos" esticado na barra da mesa). |
+| 2026-09-18 | Fase 4 concluída: token da ficha (Character v21), editor de token no DM e no Tools, desenho compartilhado em `@runas/vtt-bridge` e tamanho do token no VTT; suíte publicada e teste de ponta a ponta aprovado. |
 | 2026-09-18 | Revisão da Fase 3: corrigidos o arquivo do core que faltava no commit da suíte, as mensagens de erro da ponte, o "Iniciar encontro" dentro do VTT e o espaçamento dos tokens importados; suíte publicada; teste de ponta a ponta contra os sites reais aprovado. |
 | 2026-09-18 | Fase 3 concluída: ponte `runasVTT` restrita às origens da suíte, importação Tools/DM → tokens, Mesa do DM sobre tokens, dano confirmado, Registro e textos flutuantes; testes e smoke do Electron aprovados. |
