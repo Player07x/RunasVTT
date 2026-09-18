@@ -48,7 +48,9 @@ interface Item {
 
 type Interaction =
   | { type: "pan"; startGlobal: Point; startPosition: Point }
-  | { type: "drag"; origin: Point; moved: boolean; entries: { id: string; start: Point }[] }
+  // A seleção fica pendente durante o arrasto. Assim, clicar e segurar um
+  // token não abre a ficha: a ponte só recebe a seleção no pointerup.
+  | { type: "drag"; origin: Point; moved: boolean; entries: { id: string; start: Point }[]; selection: Set<string> }
   | { type: "box"; start: Point }
   | { type: "ruler"; start: Point }
   | { type: "draw"; start: Point; points: number[] }
@@ -192,6 +194,20 @@ export class SceneView {
   /** Centro da área visível, em coordenadas da cena. */
   viewCenter(): Point {
     return this.world.toLocal({ x: this.app.screen.width / 2, y: this.app.screen.height / 2 })
+  }
+
+  /** Escala atual da câmera, usada para a Vista dos Jogadores seguir a mesa. */
+  viewZoom(): number {
+    return this.world.scale.x
+  }
+
+  /** Move a câmera para um ponto sem criar uma intenção de edição. */
+  setCamera(center: Point, zoom?: number | null): void {
+    if (!this.scene) return
+    const nextZoom = zoom === null || zoom === undefined ? this.world.scale.x : Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom))
+    this.world.scale.set(nextZoom)
+    this.world.position.set(this.app.screen.width / 2 - center.x * nextZoom, this.app.screen.height / 2 - center.y * nextZoom)
+    this.updateOverlayScale()
   }
 
   /** Converte um ponto da tela (relativo ao elemento) para a cena. */
@@ -366,7 +382,10 @@ export class SceneView {
     const color = DISPOSITION_COLORS[data.disposition]
     const body = new Container()
     body.angle = data.rotation
-    body.addChild(new Graphics().circle(0, 0, radius).fill({ color: 0x171314 }).stroke({ color, width: Math.max(2, size * 0.035) }))
+    // A moldura acompanha a área ocupada pelo token. O retrato pode ser
+    // circular ou livre, mas a borda não cria um anel maior em volta dele.
+    const corner = Math.max(4, size * 0.1)
+    body.addChild(new Graphics().roundRect(-radius, -radius, size, size, corner).fill({ color: 0x171314 }).stroke({ color, width: Math.max(2, size * 0.035) }))
     if (data.image) {
       const path = data.image
       void this.texture(path).then((texture) => {
@@ -400,7 +419,7 @@ export class SceneView {
       name.position.set(0, radius + 3)
       display.addChild(name)
     }
-    const selection = new Graphics().circle(0, 0, radius + 4).stroke({ color: SELECTION_COLOR, width: 3 })
+    const selection = new Graphics().roundRect(-radius - 4, -radius - 4, size + 8, size + 8, corner + 4).stroke({ color: SELECTION_COLOR, width: 3 })
     display.addChild(selection)
     display.alpha = data.hidden ? 0.45 : 1
     display.hitArea = new Rectangle(-radius, -radius, size, size)
@@ -561,18 +580,21 @@ export class SceneView {
     this.lastClick = { id, at: now }
     if (isDoubleClick && item.kind === "note") { this.handlers.onOpenNote(item.document.data as NoteData); return }
 
+    const nextSelection = new Set(this.selection)
     if (event.shiftKey) {
-      if (this.selection.has(id)) this.selection.delete(id)
-      else this.selection.add(id)
-    } else if (!this.selection.has(id)) {
-      this.selection = new Set([id])
+      if (nextSelection.has(id)) nextSelection.delete(id)
+      else nextSelection.add(id)
+    } else if (!nextSelection.has(id)) {
+      nextSelection.clear()
+      nextSelection.add(id)
     }
-    this.emitSelection()
-    const entries = [...this.selection]
+    const entries = [...nextSelection]
       .map((selectedId) => this.items.get(selectedId))
       .filter((selected): selected is Item => Boolean(selected) && !this.isLocked(selected!))
       .map((selected) => ({ id: selected.id, start: { x: selected.display.x, y: selected.display.y } }))
-    if (entries.length) this.interaction = { type: "drag", origin: this.world.toLocal(event.global), moved: false, entries }
+    // Mesmo sem itens móveis (por exemplo, ao clicar num token bloqueado),
+    // mantemos a interação para publicar a seleção somente ao soltar.
+    this.interaction = { type: "drag", origin: this.world.toLocal(event.global), moved: false, entries, selection: nextSelection }
   }
 
   private onStagePointerDown(event: FederatedPointerEvent): void {
@@ -692,7 +714,11 @@ export class SceneView {
     const point = this.world.toLocal(event.global)
     if (interaction.type === "drag") {
       this.clearOverlay()
-      if (!interaction.moved) return
+      if (!interaction.moved) {
+        this.selection = new Set([...interaction.selection].filter((id) => this.items.has(id)))
+        this.emitSelection()
+        return
+      }
       for (const entry of interaction.entries) {
         const item = this.items.get(entry.id)
         if (!item) continue
@@ -704,6 +730,8 @@ export class SceneView {
         else position = moved
         this.handlers.onPut({ id: item.id, type: item.kind, parentId: item.document.parentId, data: { ...data, ...position } })
       }
+      this.selection = new Set([...interaction.selection].filter((id) => this.items.has(id)))
+      this.emitSelection()
       return
     }
     if (interaction.type === "box") {

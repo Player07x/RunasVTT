@@ -31,6 +31,18 @@ export const IPC = {
   bridgeUpdateTokenCharacter: "bridge:update-token-character",
   bridgePostLog: "bridge:post-log",
   bridgeTokensChanged: "bridge:tokens-changed",
+  playerState: "player:state",
+  playerStateChanged: "player:state-changed",
+  playerDisplays: "player:displays",
+  playerStart: "player:start",
+  playerStop: "player:stop",
+  playerOpenWindow: "player:open-window",
+  playerSetScene: "player:set-scene",
+  playerSetFollowMaster: "player:set-follow-master",
+  playerPullCamera: "player:pull-camera",
+  playerSetBars: "player:set-bars",
+  playerPublicLink: "player:public-link",
+  playerDownloadCloudflared: "player:download-cloudflared",
 } as const
 
 /** O que a mesa informa ao processo principal para a ponte saber onde agir. */
@@ -38,6 +50,8 @@ export interface TableReport {
   sceneId: string | null
   selection: string[]
   center: { x: number; y: number } | null
+  /** Escala da câmera da mesa, para a Vista dos Jogadores seguir o mestre. */
+  zoom?: number | null
 }
 
 /** Esquema que serve os assets do mundo aberto à interface: `vtt-asset://world/<tipo>/<arquivo>`. */
@@ -113,6 +127,27 @@ export interface Rect {
   height: number
 }
 
+export interface PlayerDisplay {
+  id: string
+  label: string
+  bounds: Rect
+  workArea: Rect
+}
+
+export type PlayerBarVisibility = "friendly" | "all" | "none"
+
+export interface PlayerState {
+  enabled: boolean
+  port: number
+  key: string | null
+  localUrl: string | null
+  publicUrl: string | null
+  sceneId: string | null
+  followMaster: boolean
+  bars: PlayerBarVisibility
+  spectators: number
+}
+
 export type BrowserCommand = "back" | "forward" | "reload"
 
 /**
@@ -134,6 +169,20 @@ export interface VttApi {
   }
   table: {
     report(state: TableReport): Promise<void>
+  }
+  player: {
+    state(): Promise<PlayerState>
+    onState(listener: (state: PlayerState) => void): () => void
+    displays(): Promise<PlayerDisplay[]>
+    start(port?: number): Promise<PlayerState>
+    stop(): Promise<void>
+    openWindow(): Promise<void>
+    setScene(sceneId: string | null): Promise<void>
+    setFollowMaster(follow: boolean): Promise<void>
+    pullCamera(): Promise<void>
+    setBars(bars: PlayerBarVisibility): Promise<void>
+    publicLink(): Promise<string>
+    downloadCloudflared(): Promise<void>
   }
   assets: {
     /** Copia um arquivo para o mundo aberto e devolve o caminho do asset. */

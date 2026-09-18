@@ -7,6 +7,7 @@ import { BrowserPanel } from "./BrowserPanel"
 import { SceneCanvas } from "./canvas/SceneCanvas"
 import { DocumentStore } from "./document-store"
 import { LogPanel } from "./LogPanel"
+import { PlayerPanel } from "./PlayerPanel"
 import { ScenesPanel } from "./ScenesPanel"
 
 const RULESET_LABELS: Record<RulesetId, string> = { "runas-blue": "Runas", cronos: "Cronos" }
@@ -81,13 +82,14 @@ function WorldSetup({ onOpen }: { onOpen: (world: WorldSummary) => void }) {
   </main>
 }
 
-type SideTab = "browser" | "scenes" | "audio" | "log"
+type SideTab = "browser" | "scenes" | "audio" | "log" | "players"
 
 const SIDE_TABS: { id: SideTab; label: string; icon: typeof Globe; phase: string; description: string }[] = [
   { id: "browser", label: "Navegador", icon: Globe, phase: "Fase 1", description: "Runas Tools, Runas DM e Runas Book, funcionando offline." },
   { id: "scenes", label: "Cenas", icon: MapIcon, phase: "Fase 2", description: "Cenas do mundo: mapa, grade e objetos." },
   { id: "audio", label: "Áudio", icon: Music, phase: "Fase 7", description: "Playlists com arquivos importados para o mundo." },
   { id: "log", label: "Registro", icon: ScrollText, phase: "Fase 3", description: "Testes e danos enviados pelos sites da Runas Suite." },
+  { id: "players", label: "Jogadores", icon: MonitorPlay, phase: "Fase 5", description: "Página web somente leitura para os jogadores." },
 ]
 
 const PANEL_WIDTH_KEY = "runas-vtt.side-panel-width"
@@ -167,7 +169,7 @@ function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => vo
     <header className="table-bar">
       <button className="ghost" onClick={onClose}><ArrowLeft size={16} /> Mundos</button>
       <div className="table-title"><span className="rune small">R</span><strong>{world.title}</strong><small>{RULESET_LABELS[world.rulesetId]}</small></div>
-      <button className="ghost" disabled title="Fase 5"><MonitorPlay size={16} /> Vista dos Jogadores</button>
+      <button className="ghost" onClick={() => setTab("players")} title="Vista dos Jogadores"><MonitorPlay size={16} /> Vista dos Jogadores</button>
     </header>
     <section className="canvas-area" aria-label="Cena">
       {loaded && <SceneCanvas store={store} sceneId={sceneId} onOpenUrl={openUrl} />}
@@ -179,7 +181,7 @@ function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => vo
         <span className="side-tabs-spacer" />
         <button onClick={() => setExpanded((value) => !value)} title={expanded ? "Recolher painel" : "Expandir painel"} aria-label={expanded ? "Recolher painel" : "Expandir painel"}>{expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
       </nav>
-      {tab === "browser" ? <BrowserPanel suspended={resizing} /> : tab === "scenes" ? <ScenesPanel store={store} sceneId={sceneId} onOpen={openScene} /> : tab === "log" ? <LogPanel store={store} /> : <div className="side-content">
+      {tab === "browser" ? <BrowserPanel suspended={resizing} /> : tab === "scenes" ? <ScenesPanel store={store} sceneId={sceneId} onOpen={openScene} /> : tab === "log" ? <LogPanel store={store} /> : tab === "players" ? <PlayerPanel store={store} sceneId={sceneId} /> : <div className="side-content">
         <p className="eyebrow">{current.phase}</p>
         <h2>{current.label}</h2>
         <p className="muted">{current.description}</p>

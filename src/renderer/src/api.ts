@@ -1,10 +1,16 @@
-import { assetUrl, type BrowserState, type DocumentChange, type VttApi } from "../../shared/ipc"
+import { assetUrl, type BrowserState, type DocumentChange, type PlayerDisplay, type PlayerState, type VttApi } from "../../shared/ipc"
 import { normalizeDocumentData, type AssetPath } from "../../shared/scene"
 import { SUITE_SITES } from "../../shared/sites"
 import { createWorldManifest, type WorldDocument, type WorldSummary } from "../../shared/world"
 
 /** Na visualização em navegador comum, imagens importadas viram URLs `blob:`. */
 const previewAssets = new Map<AssetPath, string>()
+let playerAssetEndpoint: { base: string; key: string } | null = null
+
+/** Configura o resolvedor para a página pública, que não tem `window.vtt`. */
+export function configurePlayerAssets(base: string, key: string): void {
+  playerAssetEndpoint = { base: base.endsWith("/") ? base : `${base}/`, key }
+}
 
 /**
  * Fora do Electron (ex.: `vite` aberto num navegador comum) não existe
@@ -26,6 +32,9 @@ function createBrowserPreviewApi(): VttApi {
   const emit = () => listeners.forEach((listener) => listener(structuredClone(state)))
   const documents = new Map<string, WorldDocument>()
   const documentListeners = new Set<(change: DocumentChange) => void>()
+  const playerListeners = new Set<(value: PlayerState) => void>()
+  const player: PlayerState = { enabled: false, port: 30000, key: null, localUrl: null, publicUrl: null, sceneId: null, followMaster: true, bars: "friendly", spectators: 0 }
+  const emitPlayer = () => playerListeners.forEach((listener) => listener({ ...player }))
   return {
     appInfo: async () => ({ version: "dev", electron: "—", worldsRoot: "(memória do navegador)" }),
     listWorlds: async () => [...worlds].sort((a, b) => b.updatedAt - a.updatedAt),
@@ -61,6 +70,20 @@ function createBrowserPreviewApi(): VttApi {
       onChange: (listener) => { documentListeners.add(listener); return () => { documentListeners.delete(listener) } },
     },
     table: { report: async () => undefined },
+    player: {
+      state: async () => ({ ...player }),
+      onState: (listener) => { playerListeners.add(listener); return () => { playerListeners.delete(listener) } },
+      displays: async (): Promise<PlayerDisplay[]> => [{ id: "preview", label: "Esta tela", bounds: { x: 0, y: 0, width: 1280, height: 720 }, workArea: { x: 0, y: 0, width: 1280, height: 720 } }],
+      start: async (port) => { player.enabled = true; player.port = port ?? 30000; player.key = "preview"; player.localUrl = `http://localhost:${player.port}/?k=preview`; emitPlayer(); return { ...player } },
+      stop: async () => { player.enabled = false; player.key = null; player.localUrl = null; player.publicUrl = null; emitPlayer() },
+      openWindow: async () => undefined,
+      setScene: async (sceneId) => { player.sceneId = sceneId; emitPlayer() },
+      setFollowMaster: async (follow) => { player.followMaster = follow; emitPlayer() },
+      pullCamera: async () => undefined,
+      setBars: async (bars) => { player.bars = bars; emitPlayer() },
+      publicLink: async () => { if (!player.enabled) throw new Error("Ligue a Vista dos Jogadores primeiro."); return player.localUrl ?? "" },
+      downloadCloudflared: async () => undefined,
+    },
     assets: {
       import: async (kind, fileName, bytes) => {
         const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource))].map((byte) => byte.toString(16).padStart(2, "0")).join("")
@@ -100,5 +123,6 @@ export const isBrowserPreview = !window.vtt
 
 /** URL de um asset do mundo para `<img>` e texturas. */
 export function resolveAssetUrl(path: AssetPath): string {
+  if (playerAssetEndpoint) return `${playerAssetEndpoint.base}${path}?k=${encodeURIComponent(playerAssetEndpoint.key)}`
   return previewAssets.get(path) ?? assetUrl(path)
 }

@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import { IPC, type DocumentChange, type TableReport } from "../shared/ipc"
 import { suiteSiteFor } from "../shared/sites"
 import { importCharacters, listBridgeTokens, postLog, updateTokenCharacter, type TableState } from "./bridge-service"
@@ -13,7 +13,12 @@ import type { WorldStore } from "./world-store"
 export class BridgeHub {
   private table: TableState = { sceneId: null, selection: [], center: null }
 
-  constructor(private readonly store: WorldStore, private readonly browser: BrowserManager) {}
+  constructor(
+    private readonly store: WorldStore,
+    private readonly browser: BrowserManager,
+    private readonly emitChange?: (change: DocumentChange) => void,
+    private readonly onTableChange?: (report: TableReport) => void,
+  ) {}
 
   register(): void {
     ipcMain.handle(IPC.tableReport, (_event, report: TableReport) => this.report(report))
@@ -42,7 +47,9 @@ export class BridgeHub {
     const selection = Array.isArray(report?.selection) ? report.selection.filter((id): id is string => typeof id === "string").slice(0, 200) : []
     const center = report?.center && Number.isFinite(report.center.x) && Number.isFinite(report.center.y) ? { x: report.center.x, y: report.center.y } : null
     const changed = sceneId !== this.table.sceneId || selection.join() !== this.table.selection.join()
-    this.table = { sceneId, selection, center }
+    const zoom = typeof report?.zoom === "number" && Number.isFinite(report.zoom) ? Math.max(0.08, Math.min(5, report.zoom)) : null
+    this.table = { sceneId, selection, center, zoom }
+    this.onTableChange?.({ sceneId, selection, center, zoom })
     if (changed) this.browser.notifySuiteTabs(IPC.bridgeTokensChanged)
   }
 
@@ -61,7 +68,7 @@ export class BridgeHub {
 
   private publish(changes: DocumentChange[]): void {
     for (const change of changes) {
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC.documentsChanged, change)
+      this.emitChange?.(change)
       this.onDocumentChange(change)
     }
   }

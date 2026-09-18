@@ -57,7 +57,7 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
     reportTimer.current = window.setTimeout(() => {
       reportTimer.current = null
       const view = viewRef.current
-      void vtt.table.report({ sceneId: latest.current.sceneId, selection: latest.current.selection, center: view ? view.viewCenter() : null })
+      void vtt.table.report({ sceneId: latest.current.sceneId, selection: latest.current.selection, center: view ? view.viewCenter() : null, zoom: view ? view.viewZoom() : null })
     }, 120)
   }
   const scene = sceneId ? store.get<SceneData>(sceneId) : null
