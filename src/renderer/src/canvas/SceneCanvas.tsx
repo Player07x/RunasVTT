@@ -1,20 +1,46 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react"
-import { Circle, Eye, EyeOff, ImagePlus, Link2, Lock, MapPin, MousePointer2, Pencil, Ruler, Square, Trash2, Type, UserRound, Waves } from "lucide-react"
+import { keyLabel, type KeyAction } from "../../../shared/settings"
+import type { PlayerRuler } from "../../../shared/player"
+import { useSettings } from "../settings"
+import { AudioLines, BrickWall, Circle, SquareDashed, DoorClosed, DoorOpen, Eye, EyeOff, ImagePlus, Lightbulb, Link2, Lock, MapPin, MousePointer2, Pencil, Ruler, ScanEye, Square, Trash2, Type, UserRound, Waves } from "lucide-react"
 import type { DocumentInput } from "../../../shared/ipc"
 import { snapTokenCenter } from "../../../shared/grid"
-import { BAR_COLORS, TOKEN_DISPOSITIONS, type DrawingData, type DrawingShape, type NoteData, type SceneData, type TileData, type TokenBar, type TokenData, type TokenDisposition } from "../../../shared/scene"
+import { BAR_COLORS, TOKEN_DISPOSITIONS, WALL_KINDS, type DrawingData, type DrawingShape, type LightData, type NoteData, type SceneData, type TileData, type TokenBar, type TokenData, type TokenDisposition, type WallData, type WallKind } from "../../../shared/scene"
+import { computeVision, renderVision } from "../../../shared/vision"
+import type { SoundData } from "../../../shared/audio"
+import { REGION_SHAPES, REGION_TRIGGERS, type RegionData, type RegionShape, type RegionTrigger } from "../../../shared/region"
 import type { AssetKind, WorldDocument } from "../../../shared/world"
 import { resolveAssetUrl, vtt } from "../api"
 import { newId, useDocumentsVersion, type DocumentStore } from "../document-store"
-import { SceneView, type DrawOptions, type SceneTool } from "./SceneView"
+import { FLOAT_COLORS, SceneView, type DrawOptions, type SceneTool } from "./SceneView"
+import { useSceneKeyboard } from "./keyboard"
 
-const TOOLS: { id: SceneTool; label: string; shortcut: string; icon: typeof Ruler }[] = [
-  { id: "select", label: "Selecionar e mover", shortcut: "V", icon: MousePointer2 },
-  { id: "ruler", label: "Régua", shortcut: "R", icon: Ruler },
-  { id: "token", label: "Novo token", shortcut: "T", icon: UserRound },
-  { id: "draw", label: "Desenhar", shortcut: "D", icon: Pencil },
-  { id: "note", label: "Nota no mapa", shortcut: "N", icon: MapPin },
+const TOOLS: { id: SceneTool; label: string; action: KeyAction; icon: typeof Ruler }[] = [
+  { id: "select", label: "Selecionar e mover", action: "toolSelect", icon: MousePointer2 },
+  { id: "ruler", label: "Régua", action: "toolRuler", icon: Ruler },
+  { id: "token", label: "Novo token", action: "toolToken", icon: UserRound },
+  { id: "draw", label: "Desenhar", action: "toolDraw", icon: Pencil },
+  { id: "note", label: "Nota no mapa", action: "toolNote", icon: MapPin },
+  { id: "wall", label: "Paredes e portas", action: "toolWall", icon: BrickWall },
+  { id: "light", label: "Luzes", action: "toolLight", icon: Lightbulb },
+  { id: "sound", label: "Sons no mapa", action: "toolSound", icon: AudioLines },
+  { id: "region", label: "Regiões", action: "toolRegion", icon: SquareDashed },
 ]
+
+const REGION_SHAPE_LABELS: Record<RegionShape, string> = { rectangle: "Retângulo", ellipse: "Elipse" }
+const REGION_TRIGGER_LABELS: Record<RegionTrigger, string> = { friendly: "Só aliados", any: "Qualquer token" }
+
+const WALL_LABELS: Record<WallKind, string> = { wall: "Parede", door: "Porta", secret: "Porta secreta" }
+const WALL_ICONS: Record<WallKind, typeof BrickWall> = { wall: BrickWall, door: DoorClosed, secret: DoorOpen }
+/** Na mesa, a escuridão aparece mais fraca para o mestre enxergar o mapa. */
+const MASTER_DARKNESS = 0.6
+
+const TOOL_HINTS: Partial<Record<SceneTool, string>> = {
+  wall: "Arraste para criar uma parede · as pontas encaixam em outras paredes e na grade (Alt solta) · clique numa parede para editar · ícones de porta abrem e fecham",
+  region: "Arraste para criar uma região · clique numa região para editar teleporte, texto ou terreno difícil · os cantos encaixam em meias células (Alt solta)",
+  sound: "Clique para pôr um som no mapa · ele toca para os jogadores quando um aliado está no alcance · Alt solta da grade",
+  light: "Clique para acender uma luz · arraste para mover · os raios aparecem com a luz selecionada",
+}
 
 const SHAPES: { id: DrawingShape; label: string; icon: typeof Square }[] = [
   { id: "rectangle", label: "Retângulo", icon: Square },
@@ -36,10 +62,15 @@ export async function importImage(kind: AssetKind, file: File): Promise<{ path: 
 
 export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStore; sceneId: string | null; onOpenUrl: (url: string) => void }) {
   const version = useDocumentsVersion(store)
+  const settings = useSettings()
   const host = useRef<HTMLDivElement>(null)
+  const rulerSender = useRef<{ timer: number | null; pending: PlayerRuler | null }>({ timer: null, pending: null })
   const viewRef = useRef<SceneView | null>(null)
   const [ready, setReady] = useState(false)
   const [tool, setTool] = useState<SceneTool>("select")
+  const [wallKind, setWallKind] = useState<WallKind>("wall")
+  const [regionShape, setRegionShape] = useState<RegionShape>("rectangle")
+  const [preview, setPreview] = useState(false)
   const [drawOptions, setDrawOptions] = useState<DrawOptions>({ shape: "rectangle", strokeColor: "#f3ece8", fillColor: "#82aaa6", fillAlpha: 0, strokeWidth: 4 })
   const [selection, setSelection] = useState<string[]>([])
   const [status, setStatus] = useState("")
@@ -57,8 +88,19 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
     reportTimer.current = window.setTimeout(() => {
       reportTimer.current = null
       const view = viewRef.current
-      void vtt.table.report({ sceneId: latest.current.sceneId, selection: latest.current.selection, center: view ? view.viewCenter() : null })
+      void vtt.table.report({ sceneId: latest.current.sceneId, selection: latest.current.selection, center: view ? view.viewCenter() : null, zoom: view ? view.viewZoom() : null })
     }, 120)
+  }
+  /** Régua da mesa para os jogadores, no máximo ~20 vezes por segundo (a última sempre chega). */
+  const sendRuler = (ruler: PlayerRuler | null) => {
+    const sender = rulerSender.current
+    sender.pending = ruler
+    if (sender.timer !== null) return
+    void vtt.player.ruler(ruler)
+    sender.timer = window.setTimeout(() => {
+      sender.timer = null
+      if (sender.pending !== ruler) void vtt.player.ruler(sender.pending)
+    }, 50)
   }
   const scene = sceneId ? store.get<SceneData>(sceneId) : null
   const put = (input: DocumentInput) => { void store.put(input).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))) }
@@ -75,6 +117,7 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
       onRemove: (ids) => { for (const id of ids) void store.remove(id) },
       onOpenNote: (note) => { if (note.url) onOpenUrl(note.url) },
       onStatus: setStatus,
+      onRulerChange: sendRuler,
     }, { editable: true }).then((view) => {
       if (disposed) { view.destroy(); return }
       created = view
@@ -110,25 +153,40 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
     for (const entry of store.logs().slice(0, 20)) {
       if (entry.createdAt < mountedAt.current || shownFloats.current.has(entry.id)) continue
       shownFloats.current.add(entry.id)
-      if (entry.data.tokenId && entry.data.floatingText) view.floatText(entry.data.tokenId, entry.data.floatingText, entry.data.kind === "damage" ? 0xc76561 : entry.data.kind === "test" ? 0x82aaa6 : 0xb99b65)
+      if (entry.data.tokenId && entry.data.floatingText) view.floatText(entry.data.tokenId, entry.data.floatingText, FLOAT_COLORS[entry.data.kind])
     }
   }, [version, ready, store])
 
   useEffect(() => { viewRef.current?.setTool(tool) }, [tool, ready])
   useEffect(() => { viewRef.current?.setDrawOptions(drawOptions) }, [drawOptions, ready])
+  useEffect(() => { viewRef.current?.setPanSpeed(settings.panSpeed) }, [settings.panSpeed, ready])
+  useEffect(() => { viewRef.current?.setWallKind(wallKind) }, [wallKind, ready])
+  useEffect(() => { viewRef.current?.setRegionShape(regionShape) }, [regionShape, ready])
 
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+  // Luz e névoa calculadas aqui mesmo, com as mesmas funções da projeção dos jogadores.
+  useEffect(() => {
     const view = viewRef.current
-    if (!view || (event.target as HTMLElement).closest("input, select, textarea")) return
-    const step = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[event.key]
-    if (step) { event.preventDefault(); view.nudgeSelection(step[0]!, step[1]!); return }
-    if (event.key === "Delete" || event.key === "Backspace") { view.deleteSelection(); return }
-    if (event.key === "Escape") { view.cancel(); setTool("select"); return }
-    const key = event.key.toLowerCase()
-    if (key === "h") view.toggleHiddenSelection()
-    const shortcut = TOOLS.find((candidate) => candidate.shortcut.toLowerCase() === key)
-    if (shortcut) setTool(shortcut.id)
-  }
+    if (!view || !ready) return
+    const current = sceneId ? store.get<SceneData>(sceneId) : null
+    if (!current) { view.setVision(null); return }
+    const children = store.children(current.id)
+    const vision = computeVision(current.data, children.tokens.map(({ id, data }) => ({ id, data })), children.walls.map((wall) => wall.data), children.lights.map((light) => light.data))
+    view.setVision(renderVision(vision, null, preview), preview ? 1 : MASTER_DARKNESS)
+  }, [version, sceneId, ready, store, preview])
+
+  const keyboard = useSceneKeyboard(viewRef, settings.keyBindings, (action) => {
+    const view = viewRef.current
+    if (!view) return
+    if (action === "deleteSelection") view.deleteSelection()
+    else if (action === "cancel") { view.cancel(); setTool("select") }
+    else if (action === "toggleHidden") view.toggleHiddenSelection()
+    else if (action === "flipToken") view.flipSelection()
+    else {
+      const next = TOOLS.find((candidate) => candidate.action === action)
+      if (next) setTool(next.id)
+    }
+  }, true)
+  const shortcutOf = (action: KeyAction) => settings.keyBindings[action].map(keyLabel).join(" / ")
 
   async function addTile(file: File, at?: { x: number; y: number }) {
     const view = viewRef.current
@@ -157,13 +215,14 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
 
   const selected = selection.length === 1 ? store.get(selection[0]!) : null
 
-  return <div className="scene-canvas" tabIndex={0} onKeyDown={onKeyDown} onPointerDown={(event) => { if ((event.target as HTMLElement).tagName === "CANVAS") event.currentTarget.focus() }} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+  return <div className="scene-canvas" tabIndex={0} onKeyDown={keyboard.onKeyDown} onKeyUp={keyboard.onKeyUp} onBlur={keyboard.onBlur} onPointerDown={(event) => { if ((event.target as HTMLElement).tagName === "CANVAS") event.currentTarget.focus() }} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <div ref={host} className="scene-host" />
     {!scene && <div className="canvas-placeholder floating"><strong>Nenhuma cena aberta</strong><p>Crie ou abra uma cena na aba <b>Cenas</b> do painel lateral.</p></div>}
     {scene && <>
       <nav className="scene-tools" aria-label="Ferramentas">
-        {TOOLS.map(({ id, label, shortcut, icon: Icon }) => <button key={id} className={tool === id ? "active" : ""} title={`${label} (${shortcut})`} aria-label={label} onClick={() => setTool(id)}><Icon size={17} /></button>)}
+        {TOOLS.map(({ id, label, action, icon: Icon }) => <button key={id} className={tool === id ? "active" : ""} title={shortcutOf(action) ? `${label} (${shortcutOf(action)})` : label} aria-label={label} onClick={() => setTool(id)}><Icon size={17} /></button>)}
         <span className="divider" />
+        <button className={preview ? "active" : ""} title={scene.data.vision.enabled ? "Ver como os jogadores (névoa e escuridão)" : "Ver a escuridão como os jogadores (a névoa está desligada nesta cena)"} aria-label="Ver como os jogadores" aria-pressed={preview} onClick={() => setPreview((value) => !value)}><ScanEye size={17} /></button>
         <button title="Adicionar imagem (tile)" aria-label="Adicionar imagem" onClick={() => tileInput.current?.click()}><ImagePlus size={17} /></button>
         <input ref={tileInput} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void addTile(file); event.target.value = "" }} />
       </nav>
@@ -173,10 +232,18 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
         <label title="Cor do preenchimento"><input type="color" value={drawOptions.fillColor} onChange={(event) => setDrawOptions({ ...drawOptions, fillColor: event.target.value, fillAlpha: drawOptions.fillAlpha || 0.35 })} /></label>
         <label className="range" title="Espessura"><input type="range" min={0} max={24} value={drawOptions.strokeWidth} onChange={(event) => setDrawOptions({ ...drawOptions, strokeWidth: Number(event.target.value) })} /></label>
       </div>}
-      {selected && <PropertiesPanel key={selected.id} document={selected} scene={scene} put={put} onRemove={() => viewRef.current?.deleteSelection()} />}
+      {tool === "region" && <div className="draw-options" aria-label="Forma da região">
+        {REGION_SHAPES.map((shape) => { const Icon = shape === "rectangle" ? Square : Circle; return <button key={shape} className={regionShape === shape ? "active" : ""} title={REGION_SHAPE_LABELS[shape]} aria-label={REGION_SHAPE_LABELS[shape]} onClick={() => setRegionShape(shape)}><Icon size={15} /></button> })}
+        <span className="draw-options-label">{REGION_SHAPE_LABELS[regionShape]}</span>
+      </div>}
+      {tool === "wall" && <div className="draw-options" aria-label="Tipo de parede">
+        {WALL_KINDS.map((kind) => { const Icon = WALL_ICONS[kind]; return <button key={kind} className={wallKind === kind ? "active" : ""} title={WALL_LABELS[kind]} aria-label={WALL_LABELS[kind]} onClick={() => setWallKind(kind)}><Icon size={15} /></button> })}
+        <span className="draw-options-label">{WALL_LABELS[wallKind]}</span>
+      </div>}
+      {selected && <PropertiesPanel key={selected.id} document={selected} scene={scene} store={store} put={put} onRemove={() => viewRef.current?.deleteSelection()} />}
       {selection.length > 1 && <div className="properties multi"><strong>{selection.length} objetos selecionados</strong><div className="row-actions"><button className="ghost" onClick={() => viewRef.current?.toggleHiddenSelection()}><EyeOff size={14} /> Ocultar/mostrar</button><button className="ghost danger" onClick={() => viewRef.current?.deleteSelection()}><Trash2 size={14} /> Excluir</button></div></div>}
       <footer className="scene-status">
-        <span>{status || "Botão direito arrasta o mapa · roda do mouse aproxima · Alt ao soltar um token ignora a grade"}</span>
+        <span>{status || TOOL_HINTS[tool] || "Botão direito ou WASD/setas movem o mapa · roda do mouse aproxima · Shift + direção move a seleção · Alt ao soltar um token ignora a grade"}</span>
         <button className="link" onClick={() => viewRef.current?.fitScene()}>Enquadrar cena</button>
       </footer>
     </>}
@@ -203,15 +270,15 @@ function TextInput({ value, onCommit, placeholder }: { value: string; onCommit: 
   return <input value={draft} placeholder={placeholder} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") commit() }} />
 }
 
-function PropertiesPanel({ document, scene, put, onRemove }: { document: WorldDocument; scene: WorldDocument<SceneData>; put: (input: DocumentInput) => void; onRemove: () => void }) {
+function PropertiesPanel({ document, scene, store, put, onRemove }: { document: WorldDocument; scene: WorldDocument<SceneData>; store: DocumentStore; put: (input: DocumentInput) => void; onRemove: () => void }) {
   const update = (patch: Record<string, unknown>) => put({ id: document.id, type: document.type, parentId: document.parentId, data: { ...(document.data as object), ...patch } })
   const data = document.data as { hidden?: boolean; locked?: boolean }
-  const title = { token: "Token", tile: "Imagem", drawing: "Desenho", note: "Nota" }[document.type as "token"] ?? "Objeto"
+  const title = { token: "Token", tile: "Imagem", drawing: "Desenho", note: "Nota", wall: "Parede", light: "Luz", sound: "Som", region: "Região" }[document.type as "token"] ?? "Objeto"
   return <aside className="properties" aria-label={`Propriedades: ${title}`}>
     <header>
       <strong>{title}</strong>
       <div className="row-actions">
-        {"hidden" in data && <button className={`icon-toggle ${data.hidden ? "active" : ""}`} title={data.hidden ? "Oculto para os jogadores (H)" : "Visível para os jogadores (H)"} aria-label="Ocultar" onClick={() => update({ hidden: !data.hidden })}>{data.hidden ? <EyeOff size={15} /> : <Eye size={15} />}</button>}
+        {"hidden" in data && <button className={`icon-toggle ${data.hidden ? "active" : ""}`} title={document.type === "light" ? (data.hidden ? "Apagada (H)" : "Acesa (H)") : document.type === "sound" ? (data.hidden ? "Desligado (H)" : "Ligado (H)") : data.hidden ? "Oculto para os jogadores (H)" : "Visível para os jogadores (H)"} aria-label="Ocultar" onClick={() => update({ hidden: !data.hidden })}>{data.hidden ? <EyeOff size={15} /> : <Eye size={15} />}</button>}
         {"locked" in data && <button className={`icon-toggle ${data.locked ? "active" : ""}`} title={data.locked ? "Travado" : "Travar posição"} aria-label="Travar" onClick={() => update({ locked: !data.locked })}><Lock size={15} /></button>}
         <button className="icon-toggle danger" title="Excluir (Delete)" aria-label="Excluir" onClick={onRemove}><Trash2 size={15} /></button>
       </div>
@@ -220,6 +287,10 @@ function PropertiesPanel({ document, scene, put, onRemove }: { document: WorldDo
     {document.type === "tile" && <TileFields data={document.data as TileData} update={update} />}
     {document.type === "drawing" && <DrawingFields data={document.data as DrawingData} update={update} />}
     {document.type === "note" && <NoteFields data={document.data as NoteData} update={update} />}
+    {document.type === "wall" && <WallFields data={document.data as WallData} update={update} />}
+    {document.type === "light" && <LightFields data={document.data as LightData} update={update} />}
+    {document.type === "sound" && <SoundFields data={document.data as SoundData} update={update} />}
+    {document.type === "region" && <RegionFields id={document.id} data={document.data as RegionData} store={store} update={update} />}
   </aside>
 }
 
@@ -256,6 +327,20 @@ function TokenFields({ data, scene, update }: { data: TokenData; scene: WorldDoc
     </div>
     <Field label="Disposição"><select value={data.disposition} onChange={(event) => update({ disposition: event.target.value as TokenDisposition })}>{TOKEN_DISPOSITIONS.map((disposition) => <option key={disposition} value={disposition}>{DISPOSITION_LABELS[disposition]}</option>)}</select></Field>
     <label className="check"><input type="checkbox" checked={data.showName} onChange={(event) => update({ showName: event.target.checked })} /> Mostrar nome</label>
+    <label className="check"><input type="checkbox" checked={data.mirror} onChange={(event) => update({ mirror: event.target.checked })} /> Espelhar a imagem (F)</label>
+    <div className="bars">
+      <span className="field-label">Visão e luz</span>
+      <label className="check"><input type="checkbox" checked={data.vision.enabled} onChange={(event) => update({ vision: { ...data.vision, enabled: event.target.checked } })} /> Tem visão (aliados revelam o mapa aos jogadores)</label>
+      <div className="field-row">
+        <Field label="Enxerga no escuro (células)"><NumberInput value={data.vision.range} step={1} min={0} onCommit={(range) => update({ vision: { ...data.vision, range: Math.max(0, range) } })} /></Field>
+      </div>
+      <div className="field-row">
+        <Field label="Luz plena (células)"><NumberInput value={data.light.bright} step={1} min={0} onCommit={(bright) => update({ light: { ...data.light, bright: Math.max(0, bright), dim: Math.max(data.light.dim, bright) } })} /></Field>
+        <Field label="Penumbra (células)"><NumberInput value={data.light.dim} step={1} min={0} onCommit={(dim) => update({ light: { ...data.light, dim: Math.max(0, dim) } })} /></Field>
+        <Field label="Cor"><input type="color" value={data.light.color} onChange={(event) => update({ light: { ...data.light, color: event.target.value } })} /></Field>
+      </div>
+      {data.disposition !== "friendly" && <small className="hint">Só tokens aliados revelam o mapa. A luz vale para qualquer token visível.</small>}
+    </div>
     <div className="bars">
       <span className="field-label">Barras</span>
       {data.bars.map((bar, index) => <div key={index} className="bar-row">
@@ -298,6 +383,95 @@ function DrawingFields({ data, update }: { data: DrawingData; update: (patch: Pa
       {(data.shape === "rectangle" || data.shape === "ellipse") && <Field label="Preenchimento"><input type="color" value={data.fillColor} onChange={(event) => update({ fillColor: event.target.value, fillAlpha: data.fillAlpha || 0.35 })} /></Field>}
     </div>
     {(data.shape === "rectangle" || data.shape === "ellipse") && <Field label={`Opacidade do preenchimento: ${Math.round(data.fillAlpha * 100)}%`}><input type="range" min={0} max={1} step={0.05} value={data.fillAlpha} onChange={(event) => update({ fillAlpha: Number(event.target.value) })} /></Field>}
+  </>
+}
+
+function WallFields({ data, update }: { data: WallData; update: (patch: Partial<WallData>) => void }) {
+  return <>
+    <Field label="Tipo"><select value={data.kind} onChange={(event) => update({ kind: event.target.value as WallKind })}>{WALL_KINDS.map((kind) => <option key={kind} value={kind}>{WALL_LABELS[kind]}</option>)}</select></Field>
+    {data.kind !== "wall" && <label className="check"><input type="checkbox" checked={data.open} onChange={(event) => update({ open: event.target.checked })} /> Aberta (deixa ver através)</label>}
+    <small className="hint">Paredes e portas fechadas bloqueiam visão e luz. Porta secreta aparece para os jogadores como parede comum. Arraste as pontas para ajustar.</small>
+  </>
+}
+
+function LightFields({ data, update }: { data: LightData; update: (patch: Partial<LightData>) => void }) {
+  return <>
+    <div className="field-row">
+      <Field label="Luz plena (células)"><NumberInput value={data.bright} step={1} min={0} onCommit={(bright) => update({ bright: Math.max(0, bright), dim: Math.max(data.dim, bright) })} /></Field>
+      <Field label="Penumbra (células)"><NumberInput value={data.dim} step={1} min={0} onCommit={(dim) => update({ dim: Math.max(0, dim) })} /></Field>
+    </div>
+    <div className="field-row">
+      <Field label="Cor"><input type="color" value={data.color} onChange={(event) => update({ color: event.target.value })} /></Field>
+      <Field label={`Intensidade da cor: ${Math.round(data.alpha * 100)}%`}><input type="range" min={0} max={1} step={0.05} value={data.alpha} onChange={(event) => update({ alpha: Number(event.target.value) })} /></Field>
+    </div>
+    <label className="check"><input type="checkbox" checked={data.hidden} onChange={(event) => update({ hidden: event.target.checked })} /> Apagada</label>
+  </>
+}
+
+function SoundFields({ data, update }: { data: SoundData; update: (patch: Partial<SoundData>) => void }) {
+  const input = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [name, setName] = useState("")
+  return <>
+    <div className="row-actions">
+      <button className="ghost" disabled={busy} onClick={() => input.current?.click()}><AudioLines size={14} /> {data.audio ? "Trocar áudio" : "Escolher áudio"}</button>
+      {data.audio && <button className="link" onClick={() => update({ audio: null })}>Remover</button>}
+    </div>
+    <small className="hint">{busy ? "Importando…" : name || (data.audio ? "Áudio escolhido." : "Sem áudio: o som não toca.")}</small>
+    <input ref={input} type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a,.flac,.webm,.opus" hidden onChange={(event) => {
+      const file = event.target.files?.[0]
+      event.target.value = ""
+      if (!file) return
+      setBusy(true)
+      void file.arrayBuffer().then((bytes) => vtt.assets.import("audio", file.name, new Uint8Array(bytes))).then((audio) => { setName(file.name); update({ audio }) }).finally(() => setBusy(false))
+    }} />
+    <div className="field-row">
+      <Field label="Alcance (células)"><NumberInput value={data.radius} step={1} min={0.5} onCommit={(radius) => update({ radius })} /></Field>
+      <Field label={`Volume: ${Math.round(data.volume * 100)}%`}><input type="range" min={0} max={1} step={0.05} value={data.volume} onChange={(event) => update({ volume: Number(event.target.value) })} /></Field>
+    </div>
+    <label className="check"><input type="checkbox" checked={data.walls} onChange={(event) => update({ walls: event.target.checked })} /> Paredes abafam o som</label>
+    <label className="check"><input type="checkbox" checked={data.hidden} onChange={(event) => update({ hidden: event.target.checked })} /> Desligado</label>
+    <small className="hint">Toca em loop, no canal Ambiente, mais alto quanto mais perto o aliado mais próximo estiver.</small>
+  </>
+}
+
+function RegionFields({ id, data, store, update }: { id: string; data: RegionData; store: DocumentStore; update: (patch: Partial<RegionData>) => void }) {
+  const targetScene = data.teleport.sceneId ?? (data.teleport.regionId ? store.get(data.teleport.regionId)?.parentId ?? null : null)
+  const targets = targetScene ? store.children(targetScene).regions.filter((region) => region.id !== id) : []
+  return <>
+    <Field label="Nome"><TextInput value={data.name} onCommit={(name) => update({ name })} /></Field>
+    <div className="field-row">
+      <Field label="Forma"><select value={data.shape} onChange={(event) => update({ shape: event.target.value as RegionShape })}>{REGION_SHAPES.map((shape) => <option key={shape} value={shape}>{REGION_SHAPE_LABELS[shape]}</option>)}</select></Field>
+      <Field label="Largura"><NumberInput value={data.width} onCommit={(width) => update({ width })} /></Field>
+      <Field label="Altura"><NumberInput value={data.height} onCommit={(height) => update({ height })} /></Field>
+      <Field label="Cor"><input type="color" value={data.color} onChange={(event) => update({ color: event.target.value })} /></Field>
+    </div>
+    <label className="check"><input type="checkbox" checked={data.enabled} onChange={(event) => update({ enabled: event.target.checked })} /> Ativa (os comportamentos disparam)</label>
+    <label className="check"><input type="checkbox" checked={data.visible} onChange={(event) => update({ visible: event.target.checked })} /> Visível aos jogadores</label>
+    <Field label="Dispara com"><select value={data.trigger} onChange={(event) => update({ trigger: event.target.value as RegionTrigger })}>{REGION_TRIGGERS.map((trigger) => <option key={trigger} value={trigger}>{REGION_TRIGGER_LABELS[trigger]}</option>)}</select></Field>
+
+    <div className="bars">
+      <label className="check"><input type="checkbox" checked={data.teleport.enabled} onChange={(event) => update({ teleport: { ...data.teleport, enabled: event.target.checked } })} /> <strong>Teleporte</strong></label>
+      {data.teleport.enabled && <>
+        <Field label="Cena de destino"><select value={targetScene ?? ""} onChange={(event) => update({ teleport: { ...data.teleport, sceneId: event.target.value || null, regionId: null } })}><option value="">Escolha…</option>{store.scenes().map((scene) => <option key={scene.id} value={scene.id}>{scene.data.name}</option>)}</select></Field>
+        {targetScene && <Field label="Região de destino"><select value={data.teleport.regionId ?? ""} onChange={(event) => update({ teleport: { ...data.teleport, sceneId: targetScene, regionId: event.target.value || null } })}><option value="">Escolha…</option>{targets.map((region) => <option key={region.id} value={region.id}>{region.data.name}</option>)}</select></Field>}
+        {targetScene && targets.length === 0 && <small className="hint">Crie uma região na cena de destino para o token chegar nela.</small>}
+      </>}
+    </div>
+
+    <div className="bars">
+      <label className="check"><input type="checkbox" checked={data.text.enabled} onChange={(event) => update({ text: { ...data.text, enabled: event.target.checked } })} /> <strong>Texto ao entrar</strong></label>
+      {data.text.enabled && <>
+        <Field label="Mensagem (vai ao Registro e sobe sobre o token)"><TextInput value={data.text.message} placeholder="O chão range sob seus pés…" onCommit={(message) => update({ text: { ...data.text, message } })} /></Field>
+        <label className="check"><input type="checkbox" checked={data.text.once} onChange={(event) => update({ text: { ...data.text, once: event.target.checked } })} /> Só uma vez (desliga depois de mostrar)</label>
+      </>}
+    </div>
+
+    <div className="bars">
+      <label className="check"><input type="checkbox" checked={data.terrain.enabled} onChange={(event) => update({ terrain: { ...data.terrain, enabled: event.target.checked } })} /> <strong>Terreno difícil</strong></label>
+      {data.terrain.enabled && <Field label="Cada célula conta como"><NumberInput value={data.terrain.multiplier} step={0.5} min={1} onCommit={(multiplier) => update({ terrain: { ...data.terrain, multiplier: Math.max(1, multiplier) } })} /></Field>}
+      {data.terrain.enabled && <small className="hint">A régua conta o trecho dentro da região multiplicado. Os jogadores só contam se a região estiver visível para eles.</small>}
+    </div>
   </>
 }
 

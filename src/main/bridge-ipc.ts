@@ -1,8 +1,9 @@
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import { IPC, type DocumentChange, type TableReport } from "../shared/ipc"
 import { suiteSiteFor } from "../shared/sites"
 import { importCharacters, listBridgeTokens, postLog, updateTokenCharacter, type TableState } from "./bridge-service"
 import type { BrowserManager } from "./browser"
+import type { SettingsStore } from "./settings"
 import type { WorldStore } from "./world-store"
 
 /**
@@ -13,7 +14,13 @@ import type { WorldStore } from "./world-store"
 export class BridgeHub {
   private table: TableState = { sceneId: null, selection: [], center: null }
 
-  constructor(private readonly store: WorldStore, private readonly browser: BrowserManager) {}
+  constructor(
+    private readonly store: WorldStore,
+    private readonly browser: BrowserManager,
+    private readonly settings: SettingsStore,
+    private readonly emitChange?: (change: DocumentChange) => void,
+    private readonly onTableChange?: (report: TableReport) => void,
+  ) {}
 
   register(): void {
     ipcMain.handle(IPC.tableReport, (_event, report: TableReport) => this.report(report))
@@ -26,6 +33,11 @@ export class BridgeHub {
     ipcMain.handle(IPC.bridgeGetTokens, (event) => listBridgeTokens(this.requireWorld(event).database, this.table))
     ipcMain.handle(IPC.bridgeUpdateTokenCharacter, (event, tokenId: unknown, envelope: unknown, summary: unknown) => {
       this.publish([updateTokenCharacter(this.requireWorld(event).database, tokenId, envelope, summary)])
+    })
+    // Preenche a "Chave de acesso" dos sites; vale mesmo sem mundo aberto.
+    ipcMain.handle(IPC.bridgeAccessToken, async (event) => {
+      this.requireSuiteFrame(event)
+      return (await this.settings.get()).accessToken
     })
     ipcMain.handle(IPC.bridgePostLog, (event, entry: unknown) => {
       this.publish(postLog(this.requireWorld(event).database, this.table, entry))
@@ -42,7 +54,9 @@ export class BridgeHub {
     const selection = Array.isArray(report?.selection) ? report.selection.filter((id): id is string => typeof id === "string").slice(0, 200) : []
     const center = report?.center && Number.isFinite(report.center.x) && Number.isFinite(report.center.y) ? { x: report.center.x, y: report.center.y } : null
     const changed = sceneId !== this.table.sceneId || selection.join() !== this.table.selection.join()
-    this.table = { sceneId, selection, center }
+    const zoom = typeof report?.zoom === "number" && Number.isFinite(report.zoom) ? Math.max(0.08, Math.min(5, report.zoom)) : null
+    this.table = { sceneId, selection, center, zoom }
+    this.onTableChange?.({ sceneId, selection, center, zoom })
     if (changed) this.browser.notifySuiteTabs(IPC.bridgeTokensChanged)
   }
 
@@ -51,9 +65,13 @@ export class BridgeHub {
    * com a ponte. O preload já não se expõe fora dessas origens; esta
    * checagem vale mesmo se uma página tentar invocar os canais por conta.
    */
-  private requireWorld(event: IpcMainInvokeEvent) {
+  private requireSuiteFrame(event: IpcMainInvokeEvent): void {
     const frame = event.senderFrame
     if (!frame || frame.parent !== null || !suiteSiteFor(frame.url) || !this.browser.isSuiteTab(event.sender.id)) throw new Error("Origem não autorizada.")
+  }
+
+  private requireWorld(event: IpcMainInvokeEvent) {
+    this.requireSuiteFrame(event)
     const world = this.store.openWorld
     if (!world) throw new Error("Abra um mundo no RunasVTT.")
     return world
@@ -61,7 +79,7 @@ export class BridgeHub {
 
   private publish(changes: DocumentChange[]): void {
     for (const change of changes) {
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC.documentsChanged, change)
+      this.emitChange?.(change)
       this.onDocumentChange(change)
     }
   }

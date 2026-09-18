@@ -13,6 +13,7 @@ export interface TableState {
   sceneId: string | null
   selection: string[]
   center: Point | null
+  zoom?: number | null
 }
 
 /** O Registro guarda as entradas mais recentes; as antigas saem sozinhas. */

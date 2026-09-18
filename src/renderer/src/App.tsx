@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
-import { ArrowLeft, FolderOpen, Globe, Map as MapIcon, Maximize2, Minimize2, MonitorPlay, Music, Plus, ScrollText } from "lucide-react"
+import { ArrowLeft, Download, FileArchive, FolderOpen, History, Globe, Map as MapIcon, Maximize2, Minimize2, MonitorPlay, Music, Plus, ScrollText, Settings } from "lucide-react"
 import type { AppInfo } from "../../shared/ipc"
 import { RULESET_IDS, WORLD_TITLE_MAX_LENGTH, type RulesetId, type WorldSummary } from "../../shared/world"
 import { isBrowserPreview, vtt } from "./api"
@@ -7,7 +7,15 @@ import { BrowserPanel } from "./BrowserPanel"
 import { SceneCanvas } from "./canvas/SceneCanvas"
 import { DocumentStore } from "./document-store"
 import { LogPanel } from "./LogPanel"
+import { PlayerPanel } from "./PlayerPanel"
 import { ScenesPanel } from "./ScenesPanel"
+import { SettingsDialog } from "./SettingsDialog"
+import { formatBytes, SnapshotsDialog } from "./BackupControls"
+import { AudioPanel, audioMixListeners } from "./AudioPanel"
+import { AudioEngine } from "./audio-engine"
+import { resolveAssetUrl } from "./api"
+import { useSettings } from "./settings"
+import type { AudioState } from "../../shared/audio"
 
 const RULESET_LABELS: Record<RulesetId, string> = { "runas-blue": "Runas", cronos: "Cronos" }
 
@@ -23,6 +31,10 @@ function WorldSetup({ onOpen }: { onOpen: (world: WorldSummary) => void }) {
   const [title, setTitle] = useState("")
   const [rulesetId, setRulesetId] = useState<RulesetId>("runas-blue")
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [snapshotsOf, setSnapshotsOf] = useState<WorldSummary | null>(null)
 
   const refresh = useCallback(async () => setWorlds(await vtt.listWorlds()), [])
 
@@ -34,6 +46,24 @@ function WorldSetup({ onOpen }: { onOpen: (world: WorldSummary) => void }) {
   async function open(id: string) {
     setError("")
     try { onOpen(await vtt.openWorld(id)) } catch (reason) { setError(reason instanceof Error ? reason.message : "Não foi possível abrir o mundo.") }
+  }
+
+  const clean = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason)).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "")
+
+  async function exportWorld(world: WorldSummary) {
+    setError(""); setNotice(""); setBusy(true)
+    try {
+      const result = await vtt.backup.exportWorld(world.id)
+      if (result) setNotice(`"${world.title}" exportado (${formatBytes(result.bytes)}) em ${result.path}`)
+    } catch (reason) { setError(clean(reason)) } finally { setBusy(false) }
+  }
+
+  async function importWorld() {
+    setError(""); setNotice(""); setBusy(true)
+    try {
+      const imported = await vtt.backup.importWorld()
+      if (imported) { setNotice(`Mundo "${imported.title}" importado.`); await refresh() }
+    } catch (reason) { setError(clean(reason)) } finally { setBusy(false) }
   }
 
   async function create() {
@@ -49,7 +79,10 @@ function WorldSetup({ onOpen }: { onOpen: (world: WorldSummary) => void }) {
     <header className="setup-brand">
       <span className="rune">R</span>
       <div><strong>RunasVTT</strong><small>Mesa virtual da Runas Suite</small></div>
+      <button className="ghost setup-settings" onClick={() => setSettingsOpen(true)}><Settings size={15} /> Configurações</button>
     </header>
+    {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+    {snapshotsOf && <SnapshotsDialog world={snapshotsOf} onClose={() => setSnapshotsOf(null)} />}
     <section className="setup-body">
       <div className="setup-copy">
         <p className="eyebrow">Seus mundos</p>
@@ -61,7 +94,9 @@ function WorldSetup({ onOpen }: { onOpen: (world: WorldSummary) => void }) {
         <label><span>Sistema</span><select value={rulesetId} onChange={(event) => setRulesetId(event.target.value as RulesetId)}>{RULESET_IDS.map((id) => <option key={id} value={id}>{RULESET_LABELS[id]}</option>)}</select></label>
         <button className="primary" disabled={!title.trim()}><Plus size={16} /> Criar mundo</button>
       </form>
+      <div className="row-actions"><button className="ghost" disabled={busy} onClick={() => void importWorld()}><FileArchive size={15} /> Importar mundo (.zip)</button></div>
       {error && <p className="error" role="alert">{error}</p>}
+      {notice && <p className="notice" role="status">{notice}</p>}
       <div className="world-list">
         {worlds === null ? <p className="muted">Carregando…</p>
           : worlds.length === 0 ? <p className="muted">Nenhum mundo ainda. Crie o primeiro acima.</p>
@@ -70,6 +105,8 @@ function WorldSetup({ onOpen }: { onOpen: (world: WorldSummary) => void }) {
                 <strong>{candidate.title}</strong>
                 <small>{RULESET_LABELS[candidate.rulesetId]} · aberto em {new Date(candidate.updatedAt).toLocaleString("pt-BR")}</small>
               </button>
+              {!isBrowserPreview && <button className="icon" title="Snapshots (cópias de segurança)" aria-label="Snapshots" onClick={() => setSnapshotsOf(candidate)}><History size={16} /></button>}
+              {!isBrowserPreview && <button className="icon" title="Exportar mundo (.zip)" aria-label="Exportar mundo" disabled={busy} onClick={() => void exportWorld(candidate)}><Download size={16} /></button>}
               {!isBrowserPreview && <button className="icon" title="Mostrar pasta do mundo" aria-label="Mostrar pasta do mundo" onClick={() => void vtt.revealWorld(candidate.id)}><FolderOpen size={16} /></button>}
             </article>)}
       </div>
@@ -81,13 +118,14 @@ function WorldSetup({ onOpen }: { onOpen: (world: WorldSummary) => void }) {
   </main>
 }
 
-type SideTab = "browser" | "scenes" | "audio" | "log"
+type SideTab = "browser" | "scenes" | "audio" | "log" | "players"
 
 const SIDE_TABS: { id: SideTab; label: string; icon: typeof Globe; phase: string; description: string }[] = [
   { id: "browser", label: "Navegador", icon: Globe, phase: "Fase 1", description: "Runas Tools, Runas DM e Runas Book, funcionando offline." },
   { id: "scenes", label: "Cenas", icon: MapIcon, phase: "Fase 2", description: "Cenas do mundo: mapa, grade e objetos." },
   { id: "audio", label: "Áudio", icon: Music, phase: "Fase 7", description: "Playlists com arquivos importados para o mundo." },
   { id: "log", label: "Registro", icon: ScrollText, phase: "Fase 3", description: "Testes e danos enviados pelos sites da Runas Suite." },
+  { id: "players", label: "Jogadores", icon: MonitorPlay, phase: "Fase 5", description: "Página web somente leitura para os jogadores." },
 ]
 
 const PANEL_WIDTH_KEY = "runas-vtt.side-panel-width"
@@ -108,11 +146,36 @@ function readLastScene(worldId: string): string | null {
   try { return localStorage.getItem(lastSceneKey(worldId)) } catch { return null }
 }
 
+/** O que o processo principal manda tocar, reproduzido nesta máquina com os volumes do mestre. */
+function useMasterAudio(): AudioState {
+  const settings = useSettings()
+  const [state, setState] = useState<AudioState>({ now: 0, sounds: [] })
+  const engine = useRef<AudioEngine | null>(null)
+  useEffect(() => {
+    const created = new AudioEngine(resolveAssetUrl, settings.audio)
+    // Só a mesa avisa o fim das faixas: é ela que faz a playlist avançar.
+    created.onEnded = (key) => { void vtt.audio.ended(key) }
+    engine.current = created
+    const apply = (next: AudioState) => { setState(next); created.apply(next) }
+    const unsubscribe = vtt.audio.onState(apply)
+    void vtt.audio.state().then(apply)
+    const onMix = (mix: typeof settings.audio) => created.setMix(mix)
+    audioMixListeners.add(onMix)
+    return () => { unsubscribe(); audioMixListeners.delete(onMix); created.destroy(); engine.current = null }
+    // O motor vive enquanto a mesa estiver aberta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => { engine.current?.setMix(settings.audio) }, [settings.audio])
+  return state
+}
+
 function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => void }) {
   const [store] = useState(() => new DocumentStore())
   const [loaded, setLoaded] = useState(false)
   const [sceneId, setSceneId] = useState<string | null>(null)
   const [tab, setTab] = useState<SideTab>("scenes")
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const audio = useMasterAudio()
 
   useEffect(() => {
     void store.load().then(() => {
@@ -167,8 +230,12 @@ function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => vo
     <header className="table-bar">
       <button className="ghost" onClick={onClose}><ArrowLeft size={16} /> Mundos</button>
       <div className="table-title"><span className="rune small">R</span><strong>{world.title}</strong><small>{RULESET_LABELS[world.rulesetId]}</small></div>
-      <button className="ghost" disabled title="Fase 5"><MonitorPlay size={16} /> Vista dos Jogadores</button>
+      <div className="table-actions">
+        <button className="ghost" onClick={() => setTab("players")} title="Vista dos Jogadores"><MonitorPlay size={16} /> Vista dos Jogadores</button>
+        <button className="icon" onClick={() => setSettingsOpen(true)} title="Configurações" aria-label="Configurações"><Settings size={16} /></button>
+      </div>
     </header>
+    {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     <section className="canvas-area" aria-label="Cena">
       {loaded && <SceneCanvas store={store} sceneId={sceneId} onOpenUrl={openUrl} />}
     </section>
@@ -179,7 +246,7 @@ function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => vo
         <span className="side-tabs-spacer" />
         <button onClick={() => setExpanded((value) => !value)} title={expanded ? "Recolher painel" : "Expandir painel"} aria-label={expanded ? "Recolher painel" : "Expandir painel"}>{expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
       </nav>
-      {tab === "browser" ? <BrowserPanel suspended={resizing} /> : tab === "scenes" ? <ScenesPanel store={store} sceneId={sceneId} onOpen={openScene} /> : tab === "log" ? <LogPanel store={store} /> : <div className="side-content">
+      {tab === "browser" ? <BrowserPanel suspended={resizing || settingsOpen} /> : tab === "scenes" ? <ScenesPanel store={store} sceneId={sceneId} onOpen={openScene} /> : tab === "log" ? <LogPanel store={store} /> : tab === "players" ? <PlayerPanel store={store} sceneId={sceneId} /> : tab === "audio" ? <AudioPanel store={store} audio={audio} /> : <div className="side-content">
         <p className="eyebrow">{current.phase}</p>
         <h2>{current.label}</h2>
         <p className="muted">{current.description}</p>

@@ -1,6 +1,8 @@
 import { CHARACTER_SOURCES, LOG_KINDS, MAX_ENVELOPE_BYTES, type CharacterSource, type LogKind } from "./bridge"
 import { DIAGONAL_RULES, GRID_TYPES, type GridConfig } from "./grid"
 import type { DocumentType } from "./world"
+import { normalizePlaylist, normalizeSound, normalizeTrack } from "./audio"
+import { normalizeRegion } from "./region"
 
 /**
  * Formatos de `data` dos documentos da cena (Fase 2). O processo principal
@@ -21,6 +23,70 @@ export interface SceneData {
   backgroundColor: string
   background: AssetPath | null
   grid: GridConfig
+  vision: SceneVisionConfig
+}
+
+/** Visão, luz e névoa da cena (Fase 6). */
+export interface SceneVisionConfig {
+  /** Névoa de guerra: os jogadores só veem o que os tokens aliados enxergam. */
+  enabled: boolean
+  /** Escuridão do ambiente, de 0 (dia claro) a 1 (breu). */
+  darkness: number
+  /** Luz do dia: tudo na linha de visão está iluminado, sem depender de luzes. */
+  globalLight: boolean
+  /** Lembrar as áreas já exploradas (aparecem esmaecidas, sem tokens). */
+  exploration: boolean
+}
+
+export const DEFAULT_SCENE_VISION: SceneVisionConfig = { enabled: false, darkness: 0, globalLight: true, exploration: true }
+
+/** Visão do token: aliados com visão revelam o mapa aos jogadores. */
+export interface TokenVision {
+  enabled: boolean
+  /** Alcance no escuro, em células (0 = só enxerga áreas iluminadas). */
+  range: number
+}
+
+/** Luz carregada pelo token (tocha, lanterna). Raios em células; 0 e 0 = sem luz. */
+export interface TokenLight {
+  bright: number
+  dim: number
+  color: string
+}
+
+export const WALL_KINDS = ["wall", "door", "secret"] as const
+export type WallKind = (typeof WALL_KINDS)[number]
+
+/** Segmento que bloqueia visão e luz. Portas abertas deixam passar. */
+export interface WallData {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  kind: WallKind
+  open: boolean
+}
+
+/** Fonte de luz fixa no mapa. Raios em células. */
+export interface LightData {
+  x: number
+  y: number
+  bright: number
+  dim: number
+  color: string
+  /** Intensidade da cor da luz, de 0 a 1. */
+  alpha: number
+  /** Apagada: não ilumina, mas continua no mapa para o mestre. */
+  hidden: boolean
+  locked: boolean
+}
+
+/** Áreas exploradas de uma cena: bits por célula, em base64 (linha a linha). */
+export interface FogData {
+  cellSize: number
+  cols: number
+  rows: number
+  bits: string
 }
 
 export const TOKEN_DISPOSITIONS = ["friendly", "neutral", "hostile", "secret"] as const
@@ -52,6 +118,8 @@ export interface TokenData {
   size: number
   image: AssetPath | null
   rotation: number
+  /** Imagem espelhada na horizontal (tecla F). */
+  mirror: boolean
   hidden: boolean
   locked: boolean
   disposition: TokenDisposition
@@ -59,6 +127,8 @@ export interface TokenData {
   bars: TokenBar[]
   showName: boolean
   actor: TokenActor | null
+  vision: TokenVision
+  light: TokenLight
 }
 
 /** Entrada do Registro: testes e danos enviados pelos sites. */
@@ -185,7 +255,59 @@ export function normalizeScene(value: unknown): SceneData {
     backgroundColor: color(raw.backgroundColor, "#1a1516"),
     background: asset(raw.background),
     grid: normalizeGrid(raw.grid),
+    vision: normalizeSceneVision(raw.vision),
   }
+}
+
+export function normalizeSceneVision(value: unknown): SceneVisionConfig {
+  const raw = record(value)
+  return {
+    enabled: bool(raw.enabled, DEFAULT_SCENE_VISION.enabled),
+    darkness: num(raw.darkness, DEFAULT_SCENE_VISION.darkness, 0, 1),
+    globalLight: bool(raw.globalLight, DEFAULT_SCENE_VISION.globalLight),
+    exploration: bool(raw.exploration, DEFAULT_SCENE_VISION.exploration),
+  }
+}
+
+/** Raio de luz ou visão, em células. */
+const radius = (value: unknown, fallback: number) => num(value, fallback, 0, 200)
+
+export function normalizeWall(value: unknown): WallData {
+  const raw = record(value)
+  const kind = oneOf(raw.kind, WALL_KINDS, "wall")
+  return {
+    x1: num(raw.x1, 0, -100000, 100000),
+    y1: num(raw.y1, 0, -100000, 100000),
+    x2: num(raw.x2, 0, -100000, 100000),
+    y2: num(raw.y2, 0, -100000, 100000),
+    kind,
+    open: kind === "wall" ? false : bool(raw.open, false),
+  }
+}
+
+export function normalizeLight(value: unknown): LightData {
+  const raw = record(value)
+  const dim = radius(raw.dim, 4)
+  return {
+    x: num(raw.x, 0),
+    y: num(raw.y, 0),
+    bright: Math.min(radius(raw.bright, 2), dim),
+    dim,
+    color: color(raw.color, "#ffd58a"),
+    alpha: num(raw.alpha, 0.35, 0, 1),
+    hidden: bool(raw.hidden, false),
+    locked: bool(raw.locked, false),
+  }
+}
+
+/** Sem dados válidos, a névoa volta vazia (nada explorado). */
+export function normalizeFog(value: unknown): FogData {
+  const raw = record(value)
+  const cellSize = num(raw.cellSize, 50, 1, 1000)
+  const cols = Math.floor(num(raw.cols, 0, 0, 5000))
+  const rows = Math.floor(num(raw.rows, 0, 0, 5000))
+  const bits = typeof raw.bits === "string" && /^[A-Za-z0-9+/]*={0,2}$/.test(raw.bits) ? raw.bits : ""
+  return bits && cols && rows ? { cellSize, cols, rows, bits } : { cellSize, cols: 0, rows: 0, bits: "" }
 }
 
 function normalizeBar(value: unknown): TokenBar {
@@ -203,6 +325,7 @@ export function normalizeToken(value: unknown): TokenData {
     size: num(raw.size, 1, 0.25, 20),
     image: asset(raw.image),
     rotation: num(raw.rotation, 0, -360, 360),
+    mirror: bool(raw.mirror, false),
     hidden: bool(raw.hidden, false),
     locked: bool(raw.locked, false),
     disposition: oneOf(raw.disposition, TOKEN_DISPOSITIONS, "neutral"),
@@ -210,7 +333,20 @@ export function normalizeToken(value: unknown): TokenData {
     bars: Array.isArray(raw.bars) ? raw.bars.slice(0, 3).map(normalizeBar) : [],
     showName: bool(raw.showName, true),
     actor: normalizeActor(raw.actor),
+    vision: normalizeTokenVision(raw.vision),
+    light: normalizeTokenLight(raw.light),
   }
+}
+
+function normalizeTokenVision(value: unknown): TokenVision {
+  const raw = record(value)
+  return { enabled: bool(raw.enabled, true), range: radius(raw.range, 0) }
+}
+
+function normalizeTokenLight(value: unknown): TokenLight {
+  const raw = record(value)
+  const dim = radius(raw.dim, 0)
+  return { bright: Math.min(radius(raw.bright, 0), dim), dim, color: color(raw.color, "#ffb45a") }
 }
 
 function normalizeActor(value: unknown): TokenActor | null {
@@ -287,7 +423,7 @@ export function normalizeNote(value: unknown): NoteData {
 }
 
 /** Tipos que pertencem a uma cena e exigem `parentId` de cena. */
-export const SCENE_CHILD_TYPES = ["token", "tile", "drawing", "note"] as const satisfies readonly DocumentType[]
+export const SCENE_CHILD_TYPES = ["token", "tile", "drawing", "note", "wall", "light", "sound", "region", "fog"] as const satisfies readonly DocumentType[]
 export type SceneChildType = (typeof SCENE_CHILD_TYPES)[number]
 
 export function isSceneChildType(type: DocumentType): type is SceneChildType {
@@ -300,6 +436,13 @@ const NORMALIZERS: Partial<Record<DocumentType, (value: unknown) => unknown>> = 
   tile: normalizeTile,
   drawing: normalizeDrawing,
   note: normalizeNote,
+  wall: normalizeWall,
+  light: normalizeLight,
+  fog: normalizeFog,
+  sound: normalizeSound,
+  region: normalizeRegion,
+  playlist: normalizePlaylist,
+  track: normalizeTrack,
   "log-entry": normalizeLog,
 }
 

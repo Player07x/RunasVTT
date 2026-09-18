@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, writeFile } from "node:fs/promises"
 import { extname, join } from "node:path"
 import { WORLD_ASSETS_DIR, type AssetKind } from "../shared/world"
 import { isAssetPath, type AssetPath } from "../shared/scene"
@@ -45,16 +45,50 @@ const MIME_TYPES: Record<string, string> = {
   mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", m4a: "audio/mp4", flac: "audio/flac", webm: "audio/webm", opus: "audio/ogg",
 }
 
+/** Maior trecho servido por requisição com Range aberta (`bytes=N-`). */
+const RANGE_CHUNK = 4 * 1024 * 1024
+
+/** Interpreta `bytes=início-fim`; `null` para cabeçalho ausente ou inválido. */
+export function parseRange(header: string | null | undefined, size: number): { start: number; end: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header?.trim() ?? "")
+  if (!match || (!match[1] && !match[2])) return null
+  let start: number
+  let end: number
+  if (!match[1]) {
+    // Sufixo: os últimos N bytes.
+    const suffix = Number(match[2])
+    start = Math.max(0, size - suffix)
+    end = size - 1
+  } else {
+    start = Number(match[1])
+    end = match[2] ? Math.min(Number(match[2]), size - 1) : Math.min(size - 1, start + RANGE_CHUNK - 1)
+  }
+  return start <= end && start < size ? { start, end } : null
+}
+
 /**
- * Resposta do protocolo `vtt-asset://`. O nome é o hash do conteúdo, então o
- * arquivo nunca muda: o cache pode ser permanente.
+ * Resposta do protocolo `vtt-asset://` e da Vista dos Jogadores. O nome é o
+ * hash do conteúdo, então o arquivo nunca muda: o cache pode ser permanente.
+ * Aceita Range, que o áudio precisa para começar do ponto certo da faixa.
  */
-export async function assetResponse(worldPath: string, path: string): Promise<Response> {
+export async function assetResponse(worldPath: string, path: string, range?: string | null): Promise<Response> {
   const file = resolveAssetFile(worldPath, path)
   if (!file) return new Response(null, { status: 404 })
+  const headers: Record<string, string> = { "content-type": MIME_TYPES[extname(file).slice(1)] ?? "application/octet-stream", "cache-control": "public, max-age=31536000, immutable", "access-control-allow-origin": "*", "accept-ranges": "bytes" }
   try {
-    const body = await readFile(file)
-    return new Response(body, { headers: { "content-type": MIME_TYPES[extname(file).slice(1)] ?? "application/octet-stream", "cache-control": "public, max-age=31536000, immutable", "access-control-allow-origin": "*" } })
+    if (!range) return new Response(await readFile(file), { headers })
+    const handle = await open(file, "r")
+    try {
+      const { size } = await handle.stat()
+      const slice = parseRange(range, size)
+      if (!slice) return new Response(null, { status: 416, headers: { ...headers, "content-range": `bytes */${size}` } })
+      const length = slice.end - slice.start + 1
+      const buffer = Buffer.alloc(length)
+      await handle.read(buffer, 0, length, slice.start)
+      return new Response(buffer, { status: 206, headers: { ...headers, "content-range": `bytes ${slice.start}-${slice.end}/${size}`, "content-length": String(length) } })
+    } finally {
+      await handle.close()
+    }
   } catch {
     return new Response(null, { status: 404 })
   }
