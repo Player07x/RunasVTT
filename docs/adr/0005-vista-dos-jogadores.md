@@ -13,7 +13,7 @@ O VTT só produz a janela limpa; a transmissão fica com ferramentas externas, s
 
 A transmissão de vídeo do Discord está bloqueada no Brasil (2026), por isso ele não é citado como caminho. Para a captura funcionar bem em todas essas ferramentas, a janela precisa:
 - ter título fixo e reconhecível ("RunasVTT — Vista dos Jogadores"), para ser achada na lista de janelas;
-- continuar renderizando quando estiver atrás de outras janelas ou minimizada, sem pausar a animação (\`backgroundThrottling: false\`);
+- continuar renderizando quando estiver atrás de outras janelas ou minimizada, sem pausar a animação (`backgroundThrottling: false`);
 - permitir tela cheia e escolha do monitor.
 
 Uma alternativa sem ferramenta externa (servir a vista como página web pela rede local ou por túnel) fica fora do escopo atual e exigiria um novo ADR.
