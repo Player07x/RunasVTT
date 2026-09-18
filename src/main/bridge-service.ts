@@ -44,8 +44,9 @@ export async function importCharacters(database: WorldDatabase, worldPath: strin
   const characters = items.map(normalizeBridgeCharacter)
   const scene = openScene(database, table)
   const grid = scene.data.grid
-  // Uma célula livre entre tokens: nomes e barras não se sobrepõem.
-  const step = (grid.type === "none" ? 100 : grid.size) * 2
+  // Uma célula livre entre tokens (os maiores ditam o passo): nomes e barras não se sobrepõem.
+  const cell = grid.type === "none" ? 100 : grid.size
+  const step = cell * (Math.max(...characters.map((character) => character.tokenSize)) + 1)
   const center = table.center ?? { x: scene.data.width / 2, y: scene.data.height / 2 }
   const columns = Math.ceil(Math.sqrt(characters.length))
   const tokenIds: string[] = []
@@ -55,12 +56,12 @@ export async function importCharacters(database: WorldDatabase, worldPath: strin
     const imagePath = image ? await importAsset(worldPath, "tokens", `token.${image.extension}`, image.bytes) : null
     const column = index % columns
     const row = Math.floor(index / columns)
-    const position = snapTokenCenter({ x: center.x + (column - (columns - 1) / 2) * step, y: center.y + (row - (Math.ceil(characters.length / columns) - 1) / 2) * step }, 1, grid)
+    const position = snapTokenCenter({ x: center.x + (column - (columns - 1) / 2) * step, y: center.y + (row - (Math.ceil(characters.length / columns) - 1) / 2) * step }, character.tokenSize, grid)
     const id = newId()
     const data: Partial<TokenData> = {
       name: character.summary.name,
       ...position,
-      size: 1,
+      size: character.tokenSize,
       image: imagePath,
       disposition: character.source === "tools" ? "friendly" : "hostile",
       bars: barsFrom(character.summary),

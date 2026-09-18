@@ -37,6 +37,8 @@ export interface BridgeCharacter {
   source: CharacterSource
   /** Imagem do token em `data:image/...;base64,`. */
   tokenImage: string | null
+  /** Tamanho em células (campo opcional do protocolo 1; padrão 1). */
+  tokenSize: number
 }
 
 export interface BridgeToken {
@@ -127,6 +129,7 @@ export function normalizeBridgeCharacter(value: unknown): BridgeCharacter {
     summary: normalizeSummary(raw.summary),
     source,
     tokenImage: typeof raw.tokenImage === "string" && raw.tokenImage ? raw.tokenImage : null,
+    tokenSize: typeof raw.tokenSize === "number" && Number.isFinite(raw.tokenSize) ? Math.min(20, Math.max(0.25, raw.tokenSize)) : 1,
   }
 }
 

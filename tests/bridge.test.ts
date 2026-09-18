@@ -70,6 +70,16 @@ describe("importCharacters", () => {
     expect((database.get(tokenIds[1]!)!.data as TokenData).disposition).toBe("friendly")
   })
 
+  it("usa o tamanho do token enviado pelo site e encaixa pelo tamanho", async () => {
+    const { tokenIds } = await importCharacters(database, dir, table, [{ envelope, summary, source: "dm", tokenSize: 2 }, { envelope, summary, source: "dm", tokenSize: 99 }])
+    const ogro = database.get(tokenIds[0]!)!.data as TokenData
+    expect(ogro.size).toBe(2)
+    expect(ogro.x % 100).toBe(0)
+    expect((database.get(tokenIds[1]!)!.data as TokenData).size).toBe(20)
+    const [semTamanho] = (await importCharacters(database, dir, table, [{ envelope, summary, source: "dm" }])).tokenIds
+    expect((database.get(semTamanho!)!.data as TokenData).size).toBe(1)
+  })
+
   it("exige uma cena aberta e limita o lote", async () => {
     await expect(importCharacters(database, dir, { ...table, sceneId: null }, [{ envelope, summary }])).rejects.toThrow(/Abra uma cena/)
     await expect(importCharacters(database, dir, table, Array.from({ length: 51 }, () => ({ envelope, summary })))).rejects.toThrow(/no máximo/)
