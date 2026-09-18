@@ -3,6 +3,7 @@ import { join } from "node:path"
 import { app, BrowserWindow, ipcMain, protocol, shell } from "electron"
 import { ASSET_SCHEME, IPC, type AppInfo, type BrowserCommand, type BrowserState, type DocumentChange, type DocumentInput, type Rect } from "../shared/ipc"
 import { ASSET_KINDS, type AssetKind, type DocumentType, type NewWorldInput, type WorldSummary } from "../shared/world"
+import { BridgeHub } from "./bridge-ipc"
 import { BrowserManager, openSiteMirror } from "./browser"
 import { runBrowserSmokeTest, runSeedSites } from "./browser-tasks"
 import { assetResponse, importAsset } from "./world-assets"
@@ -62,8 +63,12 @@ function registerWorldIpc(store: WorldStore): void {
   })
 }
 
+/** Ouvintes extras de mudanças (a ponte avisa os sites quando tokens mudam). */
+const changeListeners: ((change: DocumentChange) => void)[] = []
+
 function broadcast(change: DocumentChange): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC.documentsChanged, change)
+  for (const listener of changeListeners) listener(change)
 }
 
 function requireOpenWorld(store: WorldStore) {
@@ -150,6 +155,9 @@ void app.whenReady().then(() => {
   const window = createMainWindow()
   const browser = new BrowserManager(window, mirror, (state: BrowserState) => window.webContents.send(IPC.browserStateChanged, state))
   registerBrowserIpc(browser)
+  const bridge = new BridgeHub(store, browser)
+  bridge.register()
+  changeListeners.push((change) => bridge.onDocumentChange(change))
   app.on("before-quit", () => {
     browser.destroy()
     mirror.close()

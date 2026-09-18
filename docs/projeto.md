@@ -224,7 +224,7 @@ Registradas em 2026-09-18.
 | 0 | Fundações: Electron + Vite + React + TS, formato do mundo, ADRs | RunasVTT | 1 sem | **Concluída** (2026-09-18) |
 | 1 | Navegador integrado: abas, sessão persistente, espelho local same-origin, atualização | RunasVTT | 2–3 sem | **Concluída** (2026-09-18). A ponte `runasVTT` foi para a Fase 3, junto do contrato. |
 | 2 | Canvas essencial: cenas, grade quadrada/hex, tokens, barras PV/PA/PE, régua, tiles, desenhos, notas | RunasVTT | 3–4 sem | **Concluída** (2026-09-18) |
-| 3 | Integração: contrato da ponte, exportar→importar, dano no token selecionado, testes no Registro, Mesa sobre tokens | ambos | 2–3 sem | Pendente |
+| 3 | Integração: contrato da ponte, exportar→importar, dano no token selecionado, testes no Registro, Mesa sobre tokens | ambos | 2–3 sem | **Concluída** (2026-09-18) |
 | 4 | Imagem → token: `CHARACTER_VERSION`, migração, editor de token no DM, campo no Tools | runas-suite | 1 sem | Pendente |
 | 5 | Vista dos Jogadores (janela sem HUD) | RunasVTT | 1–2 sem | Pendente |
 | 6 | Paredes, portas, visão, luz e névoa | RunasVTT | 5–8 sem | Pendente |
@@ -263,7 +263,7 @@ Atualizado em 2026-09-18.
 - `9e52973`: Runas Book, área DM só com token. Publicado em `runas-book.pages.dev`.
 - Secrets na Cloudflare: token novo cadastrado no DM e no Book; `RUNAS_DM_CAMPAIGN_PASSWORD` removido pelo usuário. O mesmo token vale nos dois sites (confirmado pelo usuário).
 
-### RunasVTT (Fases 0, 1 e 2 concluídas)
+### RunasVTT (Fases 0, 1, 2 e 3 concluídas)
 
 **Fase 0: fundações**
 - Electron 44.4.2 (Node 24.21), electron-vite 5, Vite 7, React 19, TypeScript 5.9 e Vitest 3.
@@ -331,22 +331,27 @@ Atualizado em 2026-09-18.
   - o WebGL recusava as imagens (faltava CORS);
   - a cena não reenquadrava ao trocar o mapa.
 
-**Próximo passo:** Fase 3, a integração com a Runas Suite (contrato da ponte, importar ficha do Tools/DM como token, dano no token selecionado, testes no Registro e Mesa do DM sobre os tokens).
+**Fase 3: integração com a Runas Suite**
+- A ponte `window.runasVTT` é exposta pelo preload somente às três origens da suíte; cada chamada é conferida novamente no processo principal antes de tocar o mundo.
+- O Runas Tools e o Runas DM enviam fichas JSON como tokens na cena aberta. O lote é limitado a 50 fichas por chamada e dividido automaticamente quando necessário.
+- O DM lê os tokens da cena como atores da Mesa, usa o token selecionado como alvo preferido, grava a ficha recalculada no próprio token somente após confirmação do dano e envia testes/danos ao Registro.
+- O Registro mantém as 500 entradas mais recentes, mostra testes e danos na aba lateral e exibe o texto flutuante sobre o token correspondente.
+- A ficha continua opaca no VTT: envelope, barras e imagem são calculados pela suíte; o VTT apenas normaliza limites de transporte, persiste e renderiza.
+- **Verificação:** `npm run typecheck`, `npm test` e `npm run smoke` passaram; 53 testes (incluindo 9 da ponte) e o smoke do Electron confirmaram a persistência de tokens e a remoção em cascata da cena.
+
+**Próximo passo:** Fase 4, imagem da ficha como token: `Character.portraitDataUrl` já existe no DM, mas ainda falta revisar a migração e a ficha avançada do Tools.
 
 ---
 
 ## 11. Pendências e riscos
 
-### Mudanças necessárias na Runas Suite (Fases 3 e 4)
-- Pacote de contrato `packages/vtt-bridge` (tipos e versão da ponte).
-- Tools e DM: detectar `window.runasVTT` e trocar exportar por importar para o VTT.
-- DM: Mesa sobre os tokens do VTT; opção de aplicar dano no token selecionado; enviar testes ao Registro.
+### Mudanças necessárias na Runas Suite (Fase 4)
 - Core: imagem de token no `Character`, com `CHARACTER_VERSION`, migração e teste. Tools: campo na ficha avançada. DM: editor de token.
 - Revisar os service workers da suíte para convivência com o espelho local do VTT.
 
 ### Pendências da Fase 1 que dependem de outras fases ou de você
 - **Obsidian por pasta local no Electron:** não dá para automatizar (exige escolher a pasta no diálogo). A permissão `fileSystem` está liberada na sessão da suíte; validar manualmente.
-- **Card "Instalar Runas DM" (PWA) aparece dentro do VTT:** esconder quando `window.runasVTT` existir (mudança na suíte, Fase 3).
+- **Card "Instalar Runas DM" (PWA) aparece dentro do VTT:** já oculto quando `window.runasVTT` existe.
 - **Cloudflare Access não está ativo em `runas-dm.pages.dev`** (a página responde 200 sem login), apesar de a documentação da suíte exigir. O risco é baixo (dados locais, API com token), mas a configuração deve ser conferida no painel da Cloudflare.
 
 ### Limitações conhecidas da Fase 2 (para fases futuras)
@@ -379,3 +384,4 @@ Atualizado em 2026-09-18.
 | 2026-09-18 | Fase 2 concluída: cenas, grades quadrada e hexagonal, tokens, tiles, desenhos, notas, régua, seleção e arraste, painel de propriedades, importação de imagens por hash (`vtt-asset://`) e ADR 0008. |
 | 2026-09-18 | Fase 1 concluída: navegador integrado com cópia local na mesma origem, sessões suíte/web separadas, atualização automática, modo offline forçado, cópia inicial (`seed:sites`) e teste contra os sites reais (`smoke:browser`). Correções encontradas nos testes: redirecionamento (troca de `session.fetch` por `net.request`), HEAD offline, assets referenciados por CSS, manifesto e service worker, e área da página com altura zero. |
 | 2026-09-18 | Fase 0 concluída: ADRs 0001–0007, AGENTS.md, README, CI, smoke test no Electron e verificação visual (corrigido botão "Mundos" esticado na barra da mesa). |
+| 2026-09-18 | Fase 3 concluída: ponte `runasVTT` restrita às origens da suíte, importação Tools/DM → tokens, Mesa do DM sobre tokens, dano confirmado, Registro e textos flutuantes; testes e smoke do Electron aprovados. |

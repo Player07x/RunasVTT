@@ -18,6 +18,9 @@ const api: VttApi = {
       return () => { ipcRenderer.removeListener(IPC.documentsChanged, handler) }
     },
   },
+  table: {
+    report: (state) => ipcRenderer.invoke(IPC.tableReport, state),
+  },
   assets: {
     import: (kind, fileName, bytes) => ipcRenderer.invoke(IPC.assetsImport, kind, fileName, bytes),
   },

@@ -60,6 +60,7 @@ function createBrowserPreviewApi(): VttApi {
       },
       onChange: (listener) => { documentListeners.add(listener); return () => { documentListeners.delete(listener) } },
     },
+    table: { report: async () => undefined },
     assets: {
       import: async (kind, fileName, bytes) => {
         const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource))].map((byte) => byte.toString(16).padStart(2, "0")).join("")

@@ -6,6 +6,7 @@ import { isBrowserPreview, vtt } from "./api"
 import { BrowserPanel } from "./BrowserPanel"
 import { SceneCanvas } from "./canvas/SceneCanvas"
 import { DocumentStore } from "./document-store"
+import { LogPanel } from "./LogPanel"
 import { ScenesPanel } from "./ScenesPanel"
 
 const RULESET_LABELS: Record<RulesetId, string> = { "runas-blue": "Runas", cronos: "Cronos" }
@@ -178,7 +179,7 @@ function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => vo
         <span className="side-tabs-spacer" />
         <button onClick={() => setExpanded((value) => !value)} title={expanded ? "Recolher painel" : "Expandir painel"} aria-label={expanded ? "Recolher painel" : "Expandir painel"}>{expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
       </nav>
-      {tab === "browser" ? <BrowserPanel suspended={resizing} /> : tab === "scenes" ? <ScenesPanel store={store} sceneId={sceneId} onOpen={openScene} /> : <div className="side-content">
+      {tab === "browser" ? <BrowserPanel suspended={resizing} /> : tab === "scenes" ? <ScenesPanel store={store} sceneId={sceneId} onOpen={openScene} /> : tab === "log" ? <LogPanel store={store} /> : <div className="side-content">
         <p className="eyebrow">{current.phase}</p>
         <h2>{current.label}</h2>
         <p className="muted">{current.description}</p>

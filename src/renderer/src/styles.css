@@ -197,3 +197,19 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .scene-config h3 { margin: 6px 0 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--cyan); }
 .background-picker img, .background-picker .empty { width: 100%; height: 120px; border: 1px solid var(--line); border-radius: 10px; object-fit: cover; background: var(--bg); }
 .delete-scene { justify-self: start; margin-top: 6px; }
+
+/* Ficha vinculada e Registro */
+.actor-badge { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 9px; border: 1px solid color-mix(in srgb, var(--cyan) 35%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--cyan) 8%, transparent); color: var(--cyan); font-size: 12px; }
+.log-panel { display: grid; align-content: start; gap: 12px; min-height: 0; overflow-y: auto; padding: 16px; }
+.log-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.log-list li { display: grid; grid-template-columns: 28px 1fr; gap: 8px; padding: 9px 10px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 9px; background: var(--panel-2); }
+.log-list li.damage { border-left-color: var(--red); }
+.log-list li.test { border-left-color: var(--cyan); }
+.log-list li.info { border-left-color: var(--gold); }
+.log-icon { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; background: var(--bg); color: var(--muted); }
+.log-list li.damage .log-icon { color: var(--red); }
+.log-list li.test .log-icon { color: var(--cyan); }
+.log-list header { display: flex; justify-content: space-between; gap: 8px; }
+.log-list strong { font-size: 13px; }
+.log-list time, .log-token { color: var(--muted); font-size: 11px; }
+.log-list p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; white-space: pre-wrap; }

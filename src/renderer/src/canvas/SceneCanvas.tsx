@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react"
-import { Circle, Eye, EyeOff, ImagePlus, Lock, MapPin, MousePointer2, Pencil, Ruler, Square, Trash2, Type, UserRound, Waves } from "lucide-react"
+import { Circle, Eye, EyeOff, ImagePlus, Link2, Lock, MapPin, MousePointer2, Pencil, Ruler, Square, Trash2, Type, UserRound, Waves } from "lucide-react"
 import type { DocumentInput } from "../../../shared/ipc"
 import { snapTokenCenter } from "../../../shared/grid"
 import { BAR_COLORS, TOKEN_DISPOSITIONS, type DrawingData, type DrawingShape, type NoteData, type SceneData, type TileData, type TokenBar, type TokenData, type TokenDisposition } from "../../../shared/scene"
@@ -45,6 +45,21 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
   const [status, setStatus] = useState("")
   const [error, setError] = useState("")
   const tileInput = useRef<HTMLInputElement>(null)
+  const reportTimer = useRef<number | null>(null)
+  const latest = useRef({ sceneId, selection })
+  const mountedAt = useRef(Date.now())
+  const shownFloats = useRef(new Set<string>())
+  latest.current = { sceneId, selection }
+
+  /** Informa à ponte (sites da suíte) a cena, a seleção e o centro da vista. */
+  const scheduleReport = () => {
+    if (reportTimer.current !== null) window.clearTimeout(reportTimer.current)
+    reportTimer.current = window.setTimeout(() => {
+      reportTimer.current = null
+      const view = viewRef.current
+      void vtt.table.report({ sceneId: latest.current.sceneId, selection: latest.current.selection, center: view ? view.viewCenter() : null })
+    }, 120)
+  }
   const scene = sceneId ? store.get<SceneData>(sceneId) : null
   const put = (input: DocumentInput) => { void store.put(input).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))) }
 
@@ -54,7 +69,8 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
     let disposed = false
     let created: SceneView | null = null
     void SceneView.create(element, {
-      onSelectionChange: setSelection,
+      onSelectionChange: (ids) => { setSelection(ids); latest.current = { ...latest.current, selection: ids }; scheduleReport() },
+      onViewChange: scheduleReport,
       onPut: put,
       onRemove: (ids) => { for (const id of ids) void store.remove(id) },
       onOpenNote: (note) => { if (note.url) onOpenUrl(note.url) },
@@ -82,6 +98,21 @@ export function SceneCanvas({ store, sceneId, onOpenUrl }: { store: DocumentStor
     view.setScene(current, current ? store.children(current.id) : null)
     view.consumePendingSelection()
   }, [version, sceneId, ready, store])
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { scheduleReport() }, [sceneId, ready])
+  useEffect(() => () => { void vtt.table.report({ sceneId: null, selection: [], center: null }) }, [])
+
+  // Danos e testes enviados pelos sites sobem sobre o token (só os novos).
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !ready) return
+    for (const entry of store.logs().slice(0, 20)) {
+      if (entry.createdAt < mountedAt.current || shownFloats.current.has(entry.id)) continue
+      shownFloats.current.add(entry.id)
+      if (entry.data.tokenId && entry.data.floatingText) view.floatText(entry.data.tokenId, entry.data.floatingText, entry.data.kind === "damage" ? 0xc76561 : entry.data.kind === "test" ? 0x82aaa6 : 0xb99b65)
+    }
+  }, [version, ready, store])
 
   useEffect(() => { viewRef.current?.setTool(tool) }, [tool, ready])
   useEffect(() => { viewRef.current?.setDrawOptions(drawOptions) }, [drawOptions, ready])
@@ -215,6 +246,7 @@ function TokenFields({ data, scene, update }: { data: TokenData; scene: WorldDoc
   const setBar = (index: number, patch: Partial<TokenBar>) => update({ bars: data.bars.map((bar, current) => current === index ? { ...bar, ...patch } : bar) })
   const freeLabels = (["PV", "PA", "PE"] as const).filter((label) => !data.bars.some((bar) => bar.label === label))
   return <>
+    {data.actor && <p className="actor-badge"><Link2 size={13} /> Ficha do {data.actor.source === "tools" ? "Runas Tools" : "Runas DM"}. Barras e dano vêm do site.</p>}
     <ImagePicker kind="tokens" path={data.image} onChange={(image) => update({ image })} />
     <Field label="Nome"><TextInput value={data.name} onCommit={(name) => update({ name })} /></Field>
     <div className="field-row">
@@ -235,7 +267,7 @@ function TokenFields({ data, scene, update }: { data: TokenData; scene: WorldDoc
         <button className="link" aria-label={`Remover ${bar.label}`} onClick={() => update({ bars: data.bars.filter((_, current) => current !== index) })}>✕</button>
       </div>)}
       {data.bars.length < 3 && <div className="row-actions">{freeLabels.map((label) => <button key={label} className="ghost small" onClick={() => update({ bars: [...data.bars, { label, value: 10, max: 10, color: BAR_COLORS[label.toLowerCase() as "pv"] }] })}>+ {label}</button>)}</div>}
-      <small className="hint">Na Fase 3 as barras passam a vir da ficha no Runas DM.</small>
+      {!data.actor && <small className="hint">Importe a ficha pelo Runas DM ou Runas Tools no navegador integrado para as barras acompanharem o dano.</small>}
     </div>
   </>
 }

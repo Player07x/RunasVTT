@@ -142,7 +142,14 @@ export class BrowserManager {
     if (!url) return
     const isSuiteTab = Boolean(suiteSiteFor(url))
     const view = new WebContentsView({
-      webPreferences: { partition: isSuiteTab ? SITES_PARTITION : WEB_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false },
+      webPreferences: {
+        partition: isSuiteTab ? SITES_PARTITION : WEB_PARTITION,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        // A ponte runasVTT existe só nas abas da suíte (ADR 0003).
+        ...(isSuiteTab ? { preload: join(__dirname, "../preload/bridge.js") } : {}),
+      },
     })
     const contents = view.webContents
     const id = contents.id
@@ -185,6 +192,18 @@ export class BrowserManager {
     if (this.activeTabId === tabId) this.activeTabId = this.order[Math.min(index, this.order.length - 1)] ?? null
     this.layout()
     this.scheduleState()
+  }
+
+  /** A aba pertence à sessão da suíte (e portanto tem a ponte)? */
+  isSuiteTab(webContentsId: number): boolean {
+    return this.suiteTabs.get(webContentsId) === true
+  }
+
+  /** Envia um aviso sem dados a todas as abas da suíte (ex.: tokens mudaram). */
+  notifySuiteTabs(channel: string): void {
+    for (const [id, view] of this.tabs) {
+      if (this.suiteTabs.get(id) && !view.webContents.isDestroyed()) view.webContents.send(channel)
+    }
   }
 
   navigate(tabId: number, address: string): void {

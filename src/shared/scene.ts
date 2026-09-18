@@ -1,3 +1,4 @@
+import { CHARACTER_SOURCES, LOG_KINDS, MAX_ENVELOPE_BYTES, type CharacterSource, type LogKind } from "./bridge"
 import { DIAGONAL_RULES, GRID_TYPES, type GridConfig } from "./grid"
 import type { DocumentType } from "./world"
 
@@ -32,6 +33,17 @@ export interface TokenBar {
   color: string
 }
 
+/**
+ * Ficha ligada ao token, recebida de um site da suíte. O VTT guarda o
+ * envelope sem interpretar (ADR 0003); as barras do token são o resumo que o
+ * site calculou.
+ */
+export interface TokenActor {
+  envelope: unknown
+  source: CharacterSource
+  updatedAt: number
+}
+
 export interface TokenData {
   name: string
   x: number
@@ -46,6 +58,18 @@ export interface TokenData {
   elevation: number
   bars: TokenBar[]
   showName: boolean
+  actor: TokenActor | null
+}
+
+/** Entrada do Registro: testes e danos enviados pelos sites. */
+export interface LogData {
+  kind: LogKind
+  title: string
+  detail: string
+  tokenId: string | null
+  tokenName: string
+  sceneId: string | null
+  floatingText: string
 }
 
 export interface TileData {
@@ -185,6 +209,30 @@ export function normalizeToken(value: unknown): TokenData {
     elevation: num(raw.elevation, 0, -100000, 100000),
     bars: Array.isArray(raw.bars) ? raw.bars.slice(0, 3).map(normalizeBar) : [],
     showName: bool(raw.showName, true),
+    actor: normalizeActor(raw.actor),
+  }
+}
+
+function normalizeActor(value: unknown): TokenActor | null {
+  const raw = record(value)
+  const envelope = record(raw.envelope)
+  if (Object.keys(envelope).length === 0) return null
+  const json = JSON.stringify(envelope)
+  if (json.length > MAX_ENVELOPE_BYTES) return null
+  return { envelope: JSON.parse(json) as unknown, source: oneOf(raw.source, CHARACTER_SOURCES, "dm"), updatedAt: num(raw.updatedAt, 0) }
+}
+
+export function normalizeLog(value: unknown): LogData {
+  const raw = record(value)
+  const id = (candidate: unknown) => typeof candidate === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(candidate) ? candidate : null
+  return {
+    kind: oneOf(raw.kind, LOG_KINDS, "info"),
+    title: str(raw.title, "", 160),
+    detail: str(raw.detail, "", 2000),
+    tokenId: id(raw.tokenId),
+    tokenName: str(raw.tokenName, "", 80),
+    sceneId: id(raw.sceneId),
+    floatingText: str(raw.floatingText, "", 40),
   }
 }
 
@@ -252,6 +300,7 @@ const NORMALIZERS: Partial<Record<DocumentType, (value: unknown) => unknown>> = 
   tile: normalizeTile,
   drawing: normalizeDrawing,
   note: normalizeNote,
+  "log-entry": normalizeLog,
 }
 
 /** Normaliza o `data` de qualquer tipo conhecido; tipos das próximas fases passam intactos. */

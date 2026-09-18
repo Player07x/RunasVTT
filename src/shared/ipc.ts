@@ -25,7 +25,20 @@ export const IPC = {
   documentsDelete: "documents:delete",
   documentsChanged: "documents:changed",
   assetsImport: "assets:import",
+  tableReport: "table:report",
+  bridgeImportCharacters: "bridge:import-characters",
+  bridgeGetTokens: "bridge:get-tokens",
+  bridgeUpdateTokenCharacter: "bridge:update-token-character",
+  bridgePostLog: "bridge:post-log",
+  bridgeTokensChanged: "bridge:tokens-changed",
 } as const
+
+/** O que a mesa informa ao processo principal para a ponte saber onde agir. */
+export interface TableReport {
+  sceneId: string | null
+  selection: string[]
+  center: { x: number; y: number } | null
+}
 
 /** Esquema que serve os assets do mundo aberto à interface: `vtt-asset://world/<tipo>/<arquivo>`. */
 export const ASSET_SCHEME = "vtt-asset"
@@ -118,6 +131,9 @@ export interface VttApi {
     put(input: DocumentInput): Promise<WorldDocument>
     remove(id: string): Promise<void>
     onChange(listener: (change: DocumentChange) => void): () => void
+  }
+  table: {
+    report(state: TableReport): Promise<void>
   }
   assets: {
     /** Copia um arquivo para o mundo aberto e devolve o caminho do asset. */

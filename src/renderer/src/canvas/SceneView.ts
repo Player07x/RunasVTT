@@ -26,6 +26,8 @@ export interface SceneViewHandlers {
   onOpenNote(note: NoteData): void
   /** Texto curto para a barra de status (ex.: distância medida). */
   onStatus?(text: string): void
+  /** A área visível mudou (pan, zoom, enquadramento). */
+  onViewChange?(): void
 }
 
 export interface SceneViewOptions {
@@ -197,6 +199,25 @@ export class SceneView {
     return this.world.toLocal(screen)
   }
 
+  /** Texto que sobe e some sobre um token (dano, cura, resultado de teste). */
+  floatText(tokenId: string, text: string, color: number): void {
+    const item = this.items.get(tokenId)
+    if (!item || !text) return
+    const size = Math.max(18, (this.scene?.data.grid.size ?? 100) * 0.28)
+    const label = new Text({ text, style: { fill: color, fontSize: size, fontFamily: "Segoe UI", fontWeight: "800", stroke: { color: 0x080707, width: Math.max(3, size * 0.18) } } })
+    label.anchor.set(0.5, 1)
+    label.position.set(item.display.x, item.display.y - item.display.height / 2)
+    this.layers.overlay.addChild(label)
+    const started = performance.now()
+    const tick = () => {
+      const progress = (performance.now() - started) / 1600
+      if (progress >= 1 || label.destroyed) { this.app.ticker.remove(tick); if (!label.destroyed) label.destroy(); return }
+      label.y -= 0.6
+      label.alpha = progress < 0.7 ? 1 : 1 - (progress - 0.7) / 0.3
+    }
+    this.app.ticker.add(tick)
+  }
+
   fitScene(): void {
     if (!this.scene) return
     const { width, height } = this.scene.data
@@ -205,6 +226,7 @@ export class SceneView {
     this.world.scale.set(zoom)
     this.world.position.set((this.app.screen.width - width * zoom) / 2, (this.app.screen.height - height * zoom) / 2)
     this.updateOverlayScale()
+    this.handlers.onViewChange?.()
   }
 
   /** Move os tokens selecionados uma célula (setas do teclado). */
@@ -515,6 +537,7 @@ export class SceneView {
     const after = this.world.toGlobal(before)
     this.world.position.set(this.world.position.x + screen.x - after.x, this.world.position.y + screen.y - after.y)
     this.updateOverlayScale()
+    this.handlers.onViewChange?.()
   }
 
   // ── Interação ───────────────────────────────────────────────────────────
@@ -663,7 +686,7 @@ export class SceneView {
     const interaction = this.interaction
     this.interaction = null
     if (!interaction) return
-    if (interaction.type === "pan") { this.setTool(this.tool); return }
+    if (interaction.type === "pan") { this.setTool(this.tool); this.handlers.onViewChange?.(); return }
     const scene = this.scene
     if (!scene) return
     const point = this.world.toLocal(event.global)

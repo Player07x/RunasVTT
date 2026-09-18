@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react"
 import type { DocumentChange, DocumentInput } from "../../shared/ipc"
-import { SCENE_CHILD_TYPES, type DrawingData, type NoteData, type SceneData, type TileData, type TokenData } from "../../shared/scene"
+import { SCENE_CHILD_TYPES, type DrawingData, type LogData, type NoteData, type SceneData, type TileData, type TokenData } from "../../shared/scene"
 import type { WorldDocument } from "../../shared/world"
 import { vtt } from "./api"
 
@@ -26,7 +26,7 @@ export class DocumentStore {
 
   async load(): Promise<void> {
     this.unsubscribe = vtt.documents.onChange((change) => this.apply(change))
-    const lists = await Promise.all(["scene", ...SCENE_CHILD_TYPES].map((type) => vtt.documents.list(type as WorldDocument["type"])))
+    const lists = await Promise.all(["scene", "log-entry", ...SCENE_CHILD_TYPES].map((type) => vtt.documents.list(type as WorldDocument["type"])))
     for (const document of lists.flat()) this.documents.set(document.id, document)
     this.emit()
   }
@@ -49,6 +49,11 @@ export class DocumentStore {
 
   scenes(): WorldDocument<SceneData>[] {
     return [...this.documents.values()].filter((document) => document.type === "scene").sort(bySort) as WorldDocument<SceneData>[]
+  }
+
+  /** Registro, do mais recente para o mais antigo. */
+  logs(): WorldDocument<LogData>[] {
+    return ([...this.documents.values()].filter((document) => document.type === "log-entry") as WorldDocument<LogData>[]).sort((a, b) => b.sort - a.sort)
   }
 
   children(sceneId: string): SceneChildren {
