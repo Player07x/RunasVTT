@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { projectScene } from "../src/shared/player"
-import type { SceneData, NoteData, TileData, DrawingData, TokenData } from "../src/shared/scene"
+import { normalizeRuler, projectScene } from "../src/shared/player"
+import { DEFAULT_SCENE_VISION, type SceneData, type NoteData, type TileData, type DrawingData, type TokenData } from "../src/shared/scene"
 import type { WorldDocument } from "../src/shared/world"
 
-const sceneData: SceneData = { name: "Mapa", width: 1000, height: 800, backgroundColor: "#1a1516", background: `maps/${"a".repeat(64)}.png`, grid: { type: "square", size: 100, offsetX: 0, offsetY: 0, distance: 1.5, units: "m", diagonals: "equidistant", color: "#000000", alpha: 0.25 } }
+const sceneData: SceneData = { name: "Mapa", width: 1000, height: 800, backgroundColor: "#1a1516", background: `maps/${"a".repeat(64)}.png`, grid: { type: "square", size: 100, offsetX: 0, offsetY: 0, distance: 1.5, units: "m", diagonals: "equidistant", color: "#000000", alpha: 0.25 }, vision: DEFAULT_SCENE_VISION }
 const document = <T,>(id: string, type: WorldDocument["type"], data: T): WorldDocument<T> => ({ id, type, parentId: type === "scene" ? null : "scene-1", sort: 0, data, createdAt: 1, updatedAt: 1 })
 
 describe("projeção da Vista dos Jogadores", () => {
@@ -32,5 +32,20 @@ describe("projeção da Vista dos Jogadores", () => {
     expect(result.children[0]!.type).toBe("token")
     if (result.children[0]!.type === "token") expect(result.children[0]!.data.bars).toEqual([])
     expect(result).not.toHaveProperty("logs")
+  })
+
+  it("mantém o espelhamento do token", () => {
+    const token = { name: "Raposa", x: 10, y: 20, size: 1, image: null, rotation: 0, mirror: true, hidden: false, locked: false, disposition: "friendly", elevation: 0, bars: [], showName: true, actor: null, vision: { enabled: true, range: 0 }, light: { bright: 0, dim: 0, color: "#ffb45a" } } as TokenData
+    const result = projectScene({ scene: document("scene-1", "scene", sceneData), children: { tokens: [document("token-1", "token", token)], tiles: [], drawings: [], notes: [] }, bars: "friendly" })
+    expect(result.children[0]!.data).toHaveProperty("mirror", true)
+  })
+})
+
+describe("régua transmitida", () => {
+  it("aceita só uma régua válida da cena", () => {
+    expect(normalizeRuler({ sceneId: "scene-1", from: { x: 0, y: 0 }, to: { x: 300, y: 400 } })).toEqual({ sceneId: "scene-1", from: { x: 0, y: 0 }, to: { x: 300, y: 400 } })
+    expect(normalizeRuler({ sceneId: "../x", from: { x: 0, y: 0 }, to: { x: 1, y: 1 } })).toBeNull()
+    expect(normalizeRuler({ sceneId: "scene-1", from: { x: Number.NaN, y: 0 }, to: { x: 1, y: 1 } })).toBeNull()
+    expect(normalizeRuler(null)).toBeNull()
   })
 })

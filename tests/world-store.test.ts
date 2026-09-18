@@ -58,7 +58,8 @@ describe("WorldDatabase", () => {
     database.put({ id: "t2", type: "token", parentId: "s1", sort: 0, data: { name: "Orc" }, createdAt: now, updatedAt: now })
     expect(database.list("token", "s1").map((token) => token.id)).toEqual(["t2", "t1"])
     database.put({ id: "t1", type: "token", parentId: "s1", sort: 1, data: { name: "Goblin ferido" }, createdAt: now, updatedAt: now + 1 })
-    expect(database.get("t1")?.data).toEqual({ name: "Goblin ferido" })
+    // A leitura normaliza: documentos antigos ganham os campos novos com os padrões.
+    expect(database.get("t1")?.data).toMatchObject({ name: "Goblin ferido", vision: { enabled: true, range: 0 }, light: { bright: 0, dim: 0 } })
     database.delete("s1")
     expect(database.list("token")).toEqual([])
   })

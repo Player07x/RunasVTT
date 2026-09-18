@@ -1,5 +1,8 @@
 import type { SuiteSiteId } from "./sites"
 import type { AssetPath } from "./scene"
+import type { PlayerRuler } from "./player"
+import type { AppSettings } from "./settings"
+import type { AudioState } from "./audio"
 import type { AssetKind, DocumentType, NewWorldInput, WorldDocument, WorldSummary } from "./world"
 
 /** Canais IPC entre a interface do VTT e o processo principal. */
@@ -38,11 +41,31 @@ export const IPC = {
   playerStop: "player:stop",
   playerOpenWindow: "player:open-window",
   playerSetScene: "player:set-scene",
-  playerSetFollowMaster: "player:set-follow-master",
+  playerRuler: "player:ruler",
   playerPullCamera: "player:pull-camera",
   playerSetBars: "player:set-bars",
   playerPublicLink: "player:public-link",
   playerDownloadCloudflared: "player:download-cloudflared",
+  settingsGet: "settings:get",
+  settingsSet: "settings:set",
+  settingsChanged: "settings:changed",
+  bridgeAccessToken: "bridge:access-token",
+  visionResetExploration: "vision:reset-exploration",
+  audioState: "audio:state",
+  audioStateChanged: "audio:state-changed",
+  audioPlayPlaylist: "audio:play-playlist",
+  audioStopPlaylist: "audio:stop-playlist",
+  audioPlayTrack: "audio:play-track",
+  audioStopTrack: "audio:stop-track",
+  audioStopAll: "audio:stop-all",
+  audioEnded: "audio:ended",
+  playerSetAudio: "player:set-audio",
+  worldsExport: "worlds:export",
+  worldsImport: "worlds:import",
+  snapshotsList: "snapshots:list",
+  snapshotsCreate: "snapshots:create",
+  snapshotsRestore: "snapshots:restore",
+  snapshotsDelete: "snapshots:delete",
 } as const
 
 /** O que a mesa informa ao processo principal para a ponte saber onde agir. */
@@ -50,7 +73,7 @@ export interface TableReport {
   sceneId: string | null
   selection: string[]
   center: { x: number; y: number } | null
-  /** Escala da câmera da mesa, para a Vista dos Jogadores seguir o mestre. */
+  /** Escala da câmera da mesa, usada quando o mestre puxa a câmera dos jogadores. */
   zoom?: number | null
 }
 
@@ -143,12 +166,22 @@ export interface PlayerState {
   localUrl: string | null
   publicUrl: string | null
   sceneId: string | null
-  followMaster: boolean
+  /** Tocar também o áudio na Vista dos Jogadores. */
+  audio: boolean
   bars: PlayerBarVisibility
   spectators: number
 }
 
 export type BrowserCommand = "back" | "forward" | "reload"
+
+export type SnapshotReason = "session" | "manual" | "before-restore"
+
+export interface SnapshotInfo {
+  id: string
+  createdAt: number
+  reason: SnapshotReason
+  bytes: number
+}
 
 /**
  * API exposta à interface do VTT como `window.vtt`. Não confundir com a ponte
@@ -161,6 +194,17 @@ export interface VttApi {
   openWorld(id: string): Promise<WorldSummary>
   closeWorld(): Promise<void>
   revealWorld(id: string): Promise<void>
+  backup: {
+    /** Pergunta onde salvar e exporta o mundo em .zip; `null` se cancelado. */
+    exportWorld(id: string): Promise<{ path: string; bytes: number } | null>
+    /** Pergunta qual .zip importar; `null` se cancelado. */
+    importWorld(): Promise<WorldSummary | null>
+    snapshots(id: string): Promise<SnapshotInfo[]>
+    createSnapshot(id: string): Promise<SnapshotInfo | null>
+    /** Só com o mundo fechado; o estado atual vira um snapshot antes. */
+    restoreSnapshot(id: string, snapshotId: string): Promise<void>
+    deleteSnapshot(id: string, snapshotId: string): Promise<void>
+  }
   documents: {
     list(type: DocumentType, parentId?: string | null): Promise<WorldDocument[]>
     put(input: DocumentInput): Promise<WorldDocument>
@@ -178,11 +222,33 @@ export interface VttApi {
     stop(): Promise<void>
     openWindow(): Promise<void>
     setScene(sceneId: string | null): Promise<void>
-    setFollowMaster(follow: boolean): Promise<void>
+    /** Régua da ferramenta Régua do mestre, repassada aos espectadores; `null` apaga. */
+    ruler(ruler: PlayerRuler | null): Promise<void>
     pullCamera(): Promise<void>
     setBars(bars: PlayerBarVisibility): Promise<void>
+    setAudio(enabled: boolean): Promise<void>
     publicLink(): Promise<string>
     downloadCloudflared(): Promise<void>
+  }
+  audio: {
+    state(): Promise<AudioState>
+    onState(listener: (state: AudioState) => void): () => void
+    playPlaylist(playlistId: string): Promise<void>
+    stopPlaylist(playlistId: string): Promise<void>
+    playTrack(trackId: string): Promise<void>
+    stopTrack(trackId: string): Promise<void>
+    stopAll(): Promise<void>
+    /** A mesa avisa que uma faixa sem loop terminou. */
+    ended(key: string): Promise<void>
+  }
+  vision: {
+    /** Apaga as áreas exploradas da cena (a névoa volta a cobrir tudo). */
+    resetExploration(sceneId: string): Promise<void>
+  }
+  settings: {
+    get(): Promise<AppSettings>
+    set(settings: AppSettings): Promise<AppSettings>
+    onChange(listener: (settings: AppSettings) => void): () => void
   }
   assets: {
     /** Copia um arquivo para o mundo aberto e devolve o caminho do asset. */

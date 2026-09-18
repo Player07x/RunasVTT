@@ -6,25 +6,21 @@ import { extname, resolve, sep } from "node:path"
 import { assetResponse } from "./world-assets"
 import type { Duplex } from "node:stream"
 import type { AssetPath } from "../shared/scene"
-import type { PlayerProjection } from "../shared/player"
+import type { PlayerProjection, PlayerWireMessage } from "../shared/player"
+
+export type { PlayerWireMessage }
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 const MAX_FRAME_BYTES = 1024 * 1024
 const ASSET_KINDS = new Set(["maps", "tokens", "tiles", "audio"])
 
-export interface PlayerWireMessage {
-  type: "snapshot" | "camera" | "pong"
-  projection?: PlayerProjection
-  followMaster?: boolean
-  center?: { x: number; y: number } | null
-  zoom?: number | null
-  force?: boolean
-}
 
 interface PlayerServerOptions {
   staticRoot: string
   worldPath: () => string | null
   projection: () => PlayerProjection
+  /** Assets que os espectadores podem baixar: os da projeção e os áudios tocando. */
+  allowedAssets?: () => readonly AssetPath[]
   snapshot: () => PlayerWireMessage
   onSpectators(count: number): void
 }
@@ -89,7 +85,6 @@ export class PlayerServer {
   private server: Server | null = null
   private key = ""
   private clients = new Set<Client>()
-  private lastMessage: PlayerWireMessage | null = null
 
   constructor(private readonly options: PlayerServerOptions) {}
 
@@ -129,7 +124,6 @@ export class PlayerServer {
   }
 
   publish(message: PlayerWireMessage): void {
-    this.lastMessage = message
     for (const client of this.clients) client.send(message)
   }
 
@@ -147,11 +141,13 @@ export class PlayerServer {
     if (url.pathname.startsWith("/assets/")) {
       const parts = url.pathname.split("/").filter(Boolean)
       // Assets do not go through the static bundle path. They are served only
-      // when the current projection references the exact hash-named file.
-      if (parts.length === 3 && ASSET_KINDS.has(parts[1]!) && this.options.projection().assets.includes(`${parts[1]}/${parts[2]}` as AssetPath)) {
+      // when the current projection (or audio playing now) references the exact hash-named file.
+      const allowed = this.options.allowedAssets?.() ?? this.options.projection().assets
+      if (parts.length === 3 && ASSET_KINDS.has(parts[1]!) && allowed.includes(`${parts[1]}/${parts[2]}` as AssetPath)) {
         const worldPath = this.options.worldPath()
         if (!worldPath) { response.writeHead(404); response.end(); return }
-        const result = await assetResponse(worldPath, `${parts[1]}/${parts[2]}`)
+        const range = typeof request.headers.range === "string" ? request.headers.range : null
+        const result = await assetResponse(worldPath, `${parts[1]}/${parts[2]}`, range)
         response.writeHead(result.status, Object.fromEntries(result.headers.entries()))
         if (request.method === "HEAD" || !result.body) { response.end(); return }
         response.end(Buffer.from(await result.arrayBuffer()))
@@ -188,7 +184,9 @@ export class PlayerServer {
     }
     this.clients.add(client)
     this.options.onSpectators(this.clients.size)
-    client.send(this.lastMessage ?? this.options.snapshot())
+    // Quem chega recebe o estado completo agora, e não a última mensagem
+    // enviada (que pode ser só uma régua ou um movimento de câmera).
+    client.send(this.options.snapshot())
     socket.on("data", (chunk) => this.readFrames(client, chunk))
     const remove = () => { if (this.clients.delete(client)) this.options.onSpectators(this.clients.size) }
     socket.once("close", remove)

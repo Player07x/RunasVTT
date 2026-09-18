@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron"
 import { IPC, type BrowserState, type DocumentChange, type PlayerState, type VttApi } from "../shared/ipc"
+import type { AppSettings } from "../shared/settings"
+import type { AudioState } from "../shared/audio"
 
 const api: VttApi = {
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
@@ -8,6 +10,14 @@ const api: VttApi = {
   openWorld: (id) => ipcRenderer.invoke(IPC.openWorld, id),
   closeWorld: () => ipcRenderer.invoke(IPC.closeWorld),
   revealWorld: (id) => ipcRenderer.invoke(IPC.revealWorld, id),
+  backup: {
+    exportWorld: (id) => ipcRenderer.invoke(IPC.worldsExport, id),
+    importWorld: () => ipcRenderer.invoke(IPC.worldsImport),
+    snapshots: (id) => ipcRenderer.invoke(IPC.snapshotsList, id),
+    createSnapshot: (id) => ipcRenderer.invoke(IPC.snapshotsCreate, id),
+    restoreSnapshot: (id, snapshotId) => ipcRenderer.invoke(IPC.snapshotsRestore, id, snapshotId),
+    deleteSnapshot: (id, snapshotId) => ipcRenderer.invoke(IPC.snapshotsDelete, id, snapshotId),
+  },
   documents: {
     list: (type, parentId) => ipcRenderer.invoke(IPC.documentsList, type, parentId),
     put: (input) => ipcRenderer.invoke(IPC.documentsPut, input),
@@ -33,11 +43,38 @@ const api: VttApi = {
     stop: () => ipcRenderer.invoke(IPC.playerStop),
     openWindow: () => ipcRenderer.invoke(IPC.playerOpenWindow),
     setScene: (sceneId) => ipcRenderer.invoke(IPC.playerSetScene, sceneId),
-    setFollowMaster: (follow) => ipcRenderer.invoke(IPC.playerSetFollowMaster, follow),
+    ruler: (ruler) => ipcRenderer.invoke(IPC.playerRuler, ruler),
     pullCamera: () => ipcRenderer.invoke(IPC.playerPullCamera),
     setBars: (bars) => ipcRenderer.invoke(IPC.playerSetBars, bars),
+    setAudio: (enabled) => ipcRenderer.invoke(IPC.playerSetAudio, enabled),
     publicLink: () => ipcRenderer.invoke(IPC.playerPublicLink),
     downloadCloudflared: () => ipcRenderer.invoke(IPC.playerDownloadCloudflared),
+  },
+  audio: {
+    state: () => ipcRenderer.invoke(IPC.audioState),
+    onState: (listener) => {
+      const handler = (_event: unknown, state: AudioState) => listener(state)
+      ipcRenderer.on(IPC.audioStateChanged, handler)
+      return () => { ipcRenderer.removeListener(IPC.audioStateChanged, handler) }
+    },
+    playPlaylist: (id) => ipcRenderer.invoke(IPC.audioPlayPlaylist, id),
+    stopPlaylist: (id) => ipcRenderer.invoke(IPC.audioStopPlaylist, id),
+    playTrack: (id) => ipcRenderer.invoke(IPC.audioPlayTrack, id),
+    stopTrack: (id) => ipcRenderer.invoke(IPC.audioStopTrack, id),
+    stopAll: () => ipcRenderer.invoke(IPC.audioStopAll),
+    ended: (key) => ipcRenderer.invoke(IPC.audioEnded, key),
+  },
+  vision: {
+    resetExploration: (sceneId) => ipcRenderer.invoke(IPC.visionResetExploration, sceneId),
+  },
+  settings: {
+    get: () => ipcRenderer.invoke(IPC.settingsGet),
+    set: (settings) => ipcRenderer.invoke(IPC.settingsSet, settings),
+    onChange: (listener) => {
+      const handler = (_event: unknown, settings: AppSettings) => listener(settings)
+      ipcRenderer.on(IPC.settingsChanged, handler)
+      return () => { ipcRenderer.removeListener(IPC.settingsChanged, handler) }
+    },
   },
   assets: {
     import: (kind, fileName, bytes) => ipcRenderer.invoke(IPC.assetsImport, kind, fileName, bytes),

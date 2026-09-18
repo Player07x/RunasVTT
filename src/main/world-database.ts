@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite"
 import { isDocumentType, type DocumentType, type WorldDocument } from "../shared/world"
+import { normalizeDocumentData } from "../shared/scene"
 
 /**
  * Migrações do `world.db`, aplicadas em ordem. Nunca edite uma migração já
@@ -39,7 +40,9 @@ function toDocument(row: DocumentRow): WorldDocument {
     type: row.type,
     parentId: row.parent_id,
     sort: row.sort,
-    data: JSON.parse(row.data) as unknown,
+    // Normalizar também na leitura: documentos gravados por versões anteriores
+    // ganham os campos novos (ex.: visão e luz da Fase 6) com os padrões.
+    data: normalizeDocumentData(row.type, JSON.parse(row.data) as unknown),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -109,6 +112,14 @@ export class WorldDatabase {
   /** Remove o documento e, pela chave estrangeira, tudo o que ele contém. */
   delete(id: string): void {
     this.db.prepare("DELETE FROM documents WHERE id = ?").run(id)
+  }
+
+  /**
+   * Cópia consistente do banco num arquivo novo (inclui o que ainda está no
+   * WAL), mesmo com o mundo aberto e em uso.
+   */
+  copyTo(target: string): void {
+    this.db.prepare("VACUUM INTO ?").run(target)
   }
 
   close(): void {

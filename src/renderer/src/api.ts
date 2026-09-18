@@ -1,5 +1,6 @@
 import { assetUrl, type BrowserState, type DocumentChange, type PlayerDisplay, type PlayerState, type VttApi } from "../../shared/ipc"
 import { normalizeDocumentData, type AssetPath } from "../../shared/scene"
+import { defaultSettings, normalizeSettings, type AppSettings } from "../../shared/settings"
 import { SUITE_SITES } from "../../shared/sites"
 import { createWorldManifest, type WorldDocument, type WorldSummary } from "../../shared/world"
 
@@ -33,7 +34,9 @@ function createBrowserPreviewApi(): VttApi {
   const documents = new Map<string, WorldDocument>()
   const documentListeners = new Set<(change: DocumentChange) => void>()
   const playerListeners = new Set<(value: PlayerState) => void>()
-  const player: PlayerState = { enabled: false, port: 30000, key: null, localUrl: null, publicUrl: null, sceneId: null, followMaster: true, bars: "friendly", spectators: 0 }
+  const player: PlayerState = { enabled: false, port: 30000, key: null, localUrl: null, publicUrl: null, sceneId: null, audio: true, bars: "friendly", spectators: 0 }
+  let settings = defaultSettings()
+  const settingsListeners = new Set<(value: AppSettings) => void>()
   const emitPlayer = () => playerListeners.forEach((listener) => listener({ ...player }))
   return {
     appInfo: async () => ({ version: "dev", electron: "—", worldsRoot: "(memória do navegador)" }),
@@ -52,6 +55,14 @@ function createBrowserPreviewApi(): VttApi {
     },
     closeWorld: async () => undefined,
     revealWorld: async () => undefined,
+    backup: {
+      exportWorld: async () => null,
+      importWorld: async () => null,
+      snapshots: async () => [],
+      createSnapshot: async () => null,
+      restoreSnapshot: async () => undefined,
+      deleteSnapshot: async () => undefined,
+    },
     documents: {
       list: async (type, parentId) => [...documents.values()].filter((document) => document.type === type && (parentId === undefined || document.parentId === parentId)),
       put: async (input) => {
@@ -78,11 +89,28 @@ function createBrowserPreviewApi(): VttApi {
       stop: async () => { player.enabled = false; player.key = null; player.localUrl = null; player.publicUrl = null; emitPlayer() },
       openWindow: async () => undefined,
       setScene: async (sceneId) => { player.sceneId = sceneId; emitPlayer() },
-      setFollowMaster: async (follow) => { player.followMaster = follow; emitPlayer() },
+      ruler: async () => undefined,
       pullCamera: async () => undefined,
       setBars: async (bars) => { player.bars = bars; emitPlayer() },
+      setAudio: async (enabled) => { player.audio = enabled; emitPlayer() },
       publicLink: async () => { if (!player.enabled) throw new Error("Ligue a Vista dos Jogadores primeiro."); return player.localUrl ?? "" },
       downloadCloudflared: async () => undefined,
+    },
+    audio: {
+      state: async () => ({ now: Date.now(), sounds: [] }),
+      onState: () => () => undefined,
+      playPlaylist: async () => undefined,
+      stopPlaylist: async () => undefined,
+      playTrack: async () => undefined,
+      stopTrack: async () => undefined,
+      stopAll: async () => undefined,
+      ended: async () => undefined,
+    },
+    vision: { resetExploration: async () => undefined },
+    settings: {
+      get: async () => structuredClone(settings),
+      set: async (value) => { settings = normalizeSettings(value); settingsListeners.forEach((listener) => listener(structuredClone(settings))); return structuredClone(settings) },
+      onChange: (listener) => { settingsListeners.add(listener); return () => { settingsListeners.delete(listener) } },
     },
     assets: {
       import: async (kind, fileName, bytes) => {

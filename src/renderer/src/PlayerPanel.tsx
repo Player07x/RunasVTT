@@ -14,6 +14,7 @@ export function PlayerPanel({ store, sceneId }: { store: DocumentStore; sceneId:
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [copied, setCopied] = useState(false)
+  const [tunneling, setTunneling] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -56,14 +57,15 @@ export function PlayerPanel({ store, sceneId }: { store: DocumentStore; sceneId:
         <div className="player-link-heading"><strong>Link para os jogadores</strong><span><Users size={14} /> {state.spectators} {state.spectators === 1 ? "espectador" : "espectadores"}</span></div>
         <div className="player-link-row"><input readOnly value={link} aria-label="Link da Vista dos Jogadores" /><button className="ghost small" onClick={() => { void navigator.clipboard?.writeText(link); setCopied(true); window.setTimeout(() => setCopied(false), 1600) }}>{copied ? "Copiado" : "Copiar"}</button></div>
         {qr && <img className="player-qr" src={qr} alt="QR code do link para os jogadores" />}
-        <small className="hint">O Windows pode pedir permissão de firewall na primeira vez. Todos na mesma rede abrem este link.</small>
+        <small className="hint">{state.publicUrl ? "Link público pela internet: qualquer pessoa com ele assiste à cena. Desligue a transmissão para encerrá-lo." : "O Windows pode pedir permissão de firewall na primeira vez. Todos na mesma rede abrem este link."}</small>
       </div>
-      <div className="player-actions"><button className="ghost" onClick={() => void run(() => vtt.player.openWindow())}><MonitorPlay size={15} /> Abrir janela local</button><button className="ghost" onClick={() => { if (window.confirm("Baixar o cloudflared do release oficial da Cloudflare, verificar o SHA-256 e abrir um túnel público?")) void run(async () => { const url = await vtt.player.publicLink(); if (url) window.open(url, "_blank", "noopener,noreferrer") }) }}><ExternalLink size={15} /> Gerar link público</button></div>
+      <div className="player-actions"><button className="ghost" onClick={() => void run(() => vtt.player.openWindow())}><MonitorPlay size={15} /> Abrir janela local</button><button className="ghost" disabled={busy} onClick={() => { if (window.confirm("Baixar o cloudflared do release oficial da Cloudflare, verificar o SHA-256 e abrir um túnel público?")) void run(async () => { setTunneling(true); try { await vtt.player.publicLink() } finally { setTunneling(false) } }) }}><ExternalLink size={15} /> {tunneling ? "Gerando link…" : state.publicUrl ? "Gerar novo link público" : "Gerar link público"}</button></div>
       <p className="hint">O link público usa um túnel Cloudflare Quick Tunnel opcional e só é iniciado após sua confirmação.</p>
       <div className="player-config">
         <label className="field"><span>Cena transmitida</span><select value={state.sceneId ?? ""} onChange={(event) => void run(() => vtt.player.setScene(event.target.value || null))}><option value="">Cena aberta pelo mestre</option>{scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.data.name}</option>)}</select></label>
-        <label className="check"><input type="checkbox" checked={state.followMaster} onChange={(event) => void run(() => vtt.player.setFollowMaster(event.target.checked))} /> Seguir a câmera do mestre</label>
         <button className="ghost" onClick={() => void run(() => vtt.player.pullCamera())}><Target size={15} /> Puxar a câmera para o ponto do mestre</button>
+        <small className="hint">Cada jogador move a própria câmera. Mover a sua não mexe na deles; este botão leva todos ao que você está vendo agora.</small>
+        <label className="check"><input type="checkbox" checked={state.audio} onChange={(event) => void run(() => vtt.player.setAudio(event.target.checked))} /> Tocar o áudio também para os jogadores</label>
         <label className="field"><span>Mostrar barras aos jogadores</span><select value={state.bars} onChange={(event) => void run(() => vtt.player.setBars(event.target.value as PlayerState["bars"]))}><option value="friendly">Só nos aliados</option><option value="all">Todos os tokens</option><option value="none">Nenhuma</option></select></label>
       </div>
     </>}

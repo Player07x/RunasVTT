@@ -16,6 +16,7 @@ describe("preload da ponte", () => {
       updateTokenCharacter: IPC.bridgeUpdateTokenCharacter,
       postLog: IPC.bridgePostLog,
       tokensChanged: IPC.bridgeTokensChanged,
+      accessToken: IPC.bridgeAccessToken,
     })
     const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../src/preload/bridge.ts", import.meta.url), "utf8"))
     expect(source).toContain(`const PROTOCOL = ${BRIDGE_PROTOCOL}`)

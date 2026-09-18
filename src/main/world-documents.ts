@@ -17,8 +17,11 @@ export function putDocument(database: WorldDatabase, input: DocumentInput, now =
   if (isSceneChildType(input.type)) {
     const parent = parentId ? database.get(parentId) : null
     if (parent?.type !== "scene") throw new Error("Este objeto precisa pertencer a uma cena.")
-  } else if (input.type === "scene" && parentId !== null) {
-    throw new Error("Cenas não pertencem a outro documento.")
+  } else if (input.type === "track") {
+    const parent = parentId ? database.get(parentId) : null
+    if (parent?.type !== "playlist") throw new Error("A faixa precisa pertencer a uma playlist.")
+  } else if ((input.type === "scene" || input.type === "playlist") && parentId !== null) {
+    throw new Error("Cenas e playlists não pertencem a outro documento.")
   }
   const existing = database.get(input.id)
   if (existing && existing.type !== input.type) throw new Error("O id já pertence a outro tipo de documento.")

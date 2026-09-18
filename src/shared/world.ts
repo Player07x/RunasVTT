@@ -58,6 +58,8 @@ export const DOCUMENT_TYPES = [
   "note",
   "wall",
   "light",
+  /** Áreas exploradas de uma cena (Fase 6); só o processo principal grava. */
+  "fog",
   "region",
   "sound",
   "playlist",

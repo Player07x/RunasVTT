@@ -107,18 +107,38 @@ export async function ensureCloudflared(userData: string): Promise<string> {
 }
 
 export function startCloudflared(binary: string, port: number): { process: ChildProcess; url: Promise<string> } {
-  const child = spawn(binary, ["tunnel", "--url", `http://127.0.0.1:${port}`], { stdio: ["ignore", "pipe", "pipe"] })
+  const child = spawn(binary, ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${port}`], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true })
   const url = new Promise<string>((resolve, reject) => {
     let output = ""
+    let tunnelUrl: string | null = null
+    let found = false
+    // Os dois canais continuam sendo lidos depois da URL: um pipe cheio
+    // bloquearia o cloudflared e derrubaria o túnel no meio da sessão.
+    // A URL só é entregue depois que a conexão com a borda da Cloudflare foi
+    // registrada; antes disso o endereço existe, mas ainda não atende.
     const onData = (chunk: Buffer) => {
+      if (found) return
       output = `${output}${chunk.toString("utf8")}`.slice(-12000)
-      const match = output.match(/https:\/\/[-a-z0-9]+\.trycloudflare\.com/i)
-      if (match) { child.stdout.off("data", onData); resolve(match[0]) }
+      tunnelUrl ??= quickTunnelUrl(output)
+      if (tunnelUrl && /Registered tunnel connection/i.test(output)) { found = true; resolve(tunnelUrl) }
     }
     child.stdout?.on("data", onData)
     child.stderr?.on("data", onData)
     child.once("error", reject)
-    child.once("exit", (code) => { if (code !== 0) reject(new Error(`cloudflared encerrou (${code ?? "sem código"}).`)) })
+    child.once("exit", (code) => { if (!found) reject(new Error(`cloudflared encerrou antes de criar o túnel (${code ?? "sem código"}).`)) })
   })
   return { process: child, url }
+}
+
+/** Primeiro endereço de Quick Tunnel citado na saída do cloudflared. */
+export function quickTunnelUrl(output: string): string | null {
+  return output.match(/https:\/\/(?!api\.)[-a-z0-9]+\.trycloudflare\.com/i)?.[0] ?? null
+}
+
+/** Link que os jogadores abrem: o túnel só repassa a página se ela levar a chave da sessão. */
+export function publicPlayerUrl(tunnelUrl: string, key: string): string {
+  const url = new URL(tunnelUrl)
+  url.pathname = "/"
+  url.search = `?k=${encodeURIComponent(key)}`
+  return url.toString()
 }

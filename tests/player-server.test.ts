@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { PlayerServer } from "../src/main/player-server"
 import type { PlayerProjection } from "../src/shared/player"
 
-const projection: PlayerProjection = { scene: null, children: [], assets: [] }
+const projection: PlayerProjection = { scene: null, children: [], assets: [], vision: null, regions: [] }
 const servers: PlayerServer[] = []
 
 afterEach(async () => { for (const server of servers.splice(0)) await server.stop() })
@@ -15,7 +15,7 @@ describe("servidor da Vista dos Jogadores", () => {
     const root = join(tmpdir(), `runas-vtt-player-${Date.now()}`)
     await mkdir(root, { recursive: true })
     await writeFile(join(root, "player.html"), "<h1>player</h1>")
-    const server = new PlayerServer({ staticRoot: root, worldPath: () => null, projection: () => projection, snapshot: () => ({ type: "snapshot", projection }), onSpectators: () => undefined })
+    const server = new PlayerServer({ staticRoot: root, worldPath: () => null, projection: () => projection, snapshot: () => ({ type: "snapshot", projection, ruler: null, audio: null }), onSpectators: () => undefined })
     servers.push(server)
     await server.start(0, "chave")
     const base = `http://127.0.0.1:${server.addressPort}`
@@ -31,7 +31,7 @@ describe("servidor da Vista dos Jogadores", () => {
     const hash = "a".repeat(64)
     await mkdir(join(world, "assets", "maps"), { recursive: true })
     await writeFile(join(world, "assets", "maps", `${hash}.png`), Buffer.from([1, 2, 3]))
-    const server = new PlayerServer({ staticRoot: root, worldPath: () => world, projection: () => ({ scene: null, children: [], assets: [`maps/${hash}.png`] }), snapshot: () => ({ type: "snapshot", projection }), onSpectators: () => undefined })
+    const server = new PlayerServer({ staticRoot: root, worldPath: () => world, projection: () => ({ scene: null, children: [], assets: [`maps/${hash}.png`], vision: null, regions: [] }), snapshot: () => ({ type: "snapshot", projection, ruler: null, audio: null }), onSpectators: () => undefined })
     servers.push(server)
     await server.start(0, "chave")
     const base = `http://127.0.0.1:${server.addressPort}`
