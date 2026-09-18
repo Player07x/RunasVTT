@@ -371,7 +371,7 @@ Atualizado em 2026-09-18.
   - no navegador: editor do DM (token WebP salvo, tamanho 2, versão 21, cartão com token, campo na ficha avançada) e editor do Tools (token persiste após recarregar);
   - ponta a ponta no Electron contra o DM publicado: token 2×2 criado no DM chegou ao mapa do VTT com imagem e tamanho.
 
-**Próximo passo:** Fase 5, Vista dos Jogadores (janela sem HUD, com névoa e objetos ocultos respeitados). O `SceneView` já tem o modo `editable: false` para isso.
+**Próximo passo:** Fase 5, Vista dos Jogadores como página web transmitida pelo VTT (ADR 0009), a cargo do Codex. O `SceneView` já tem o modo `editable: false`, e as mudanças de documentos já são transmitidas pelo processo principal.
 
 ---
 
