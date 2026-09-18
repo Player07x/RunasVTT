@@ -37,7 +37,7 @@ A ideia central, definida pelo usuário na revisão do plano, é que **o VTT nã
 - Ao detectar que estão dentro do VTT, os sites mudam o comportamento: **exportar ficha passa a importar para o VTT**, e **dano e testes são aplicados ao token selecionado**.
 - Fichas, testes, dano e regras continuam sendo calculados **pelos sites** (que usam o `@runas/core`). O VTT nunca reimplementa regra.
 
-**Quem usa:** somente o mestre, em uma máquina. Os jogadores veem a **Vista dos Jogadores**, uma janela limpa, sem HUD, exibida em um segundo monitor ou TV, ou compartilhada pelo Discord ou OBS.
+**Quem usa:** somente o mestre, em uma máquina. Os jogadores veem a **Vista dos Jogadores**, uma janela limpa, sem HUD. Ela pode ser exibida em um segundo monitor ou TV, ou compartilhada por qualquer ferramenta que capture uma janela (Google Meet, Microsoft Teams, Zoom, Jitsi Meet ou OBS). O VTT não depende de nenhum serviço específico; a transmissão de vídeo do Discord está bloqueada no Brasil e não deve ser tratada como caminho principal.
 
 **Custo contínuo:** nenhum obrigatório. O app roda localmente, e os serviços da suíte já usam a camada gratuita da Cloudflare.
 
@@ -245,7 +245,7 @@ Registradas em 2026-09-18.
 | 0002 | Navegador integrado com espelho local **na mesma origem** dos sites | Preserva IndexedDB e localStorage entre online e offline (seção 4.1) |
 | 0003 | O VTT não interpreta `Character`: guarda o envelope opaco e o resumo enviado pelo site | Evita duplicar regras (M11 e regra da suíte) |
 | 0004 | Mundo = pasta com `world.json`, `world.db` (SQLite `node:sqlite`) e `assets/` | Backup por cópia, sem módulo nativo, migrações versionadas |
-| 0005 | Vista dos Jogadores = janela Electron separada que renderiza a cena sem HUD | M6. Funciona em outro monitor, TV, Discord ou OBS. |
+| 0005 | Vista dos Jogadores = janela Electron separada que renderiza a cena sem HUD | M6. Funciona em outro monitor ou TV, ou capturada por qualquer ferramenta de compartilhamento de janela (Meet, Teams, Zoom, Jitsi, OBS). Não depende do Discord, cuja transmissão de vídeo está bloqueada no Brasil. |
 | 0006 | O VTT é a fonte da verdade dos tokens; o token é uma cópia independente da ficha | M13. Evita duas "mesas" divergentes e mantém a regra da Mesa do DM. |
 | 0008 | Cena: documentos normalizados no processo principal, assets por hash via `vtt-asset://` (CORS), `SceneView` imperativo em PixiJS com `unsafe-eval` oficial | Uma única regra de dados, cache seguro e renderizador pronto para a Vista dos Jogadores |
 | 0007 | Electron em vez de Tauri | Chromium embutido e controlado para o navegador integrado, e ecossistema TypeScript |
@@ -418,6 +418,7 @@ Atualizado em 2026-09-18.
 | 2026-09-18 | Fase 2 concluída: cenas, grades quadrada e hexagonal, tokens, tiles, desenhos, notas, régua, seleção e arraste, painel de propriedades, importação de imagens por hash (`vtt-asset://`) e ADR 0008. |
 | 2026-09-18 | Fase 1 concluída: navegador integrado com cópia local na mesma origem, sessões suíte/web separadas, atualização automática, modo offline forçado, cópia inicial (`seed:sites`) e teste contra os sites reais (`smoke:browser`). Correções encontradas nos testes: redirecionamento (troca de `session.fetch` por `net.request`), HEAD offline, assets referenciados por CSS, manifesto e service worker, e área da página com altura zero. |
 | 2026-09-18 | Fase 0 concluída: ADRs 0001–0007, AGENTS.md, README, CI, smoke test no Electron e verificação visual (corrigido botão "Mundos" esticado na barra da mesa). |
+| 2026-09-18 | Vista dos Jogadores sem dependência do Discord (transmissão de vídeo bloqueada no Brasil): projeto.md e ADR 0005 listam TV/monitor, Meet, Teams, Zoom, Jitsi e OBS, com requisitos de captura da janela. |
 | 2026-09-18 | Fase 4 concluída: token da ficha (Character v21), editor de token no DM e no Tools, desenho compartilhado em `@runas/vtt-bridge` e tamanho do token no VTT; suíte publicada e teste de ponta a ponta aprovado. |
 | 2026-09-18 | Revisão da Fase 3: corrigidos o arquivo do core que faltava no commit da suíte, as mensagens de erro da ponte, o "Iniciar encontro" dentro do VTT e o espaçamento dos tokens importados; suíte publicada; teste de ponta a ponta contra os sites reais aprovado. |
 | 2026-09-18 | Fase 3 concluída: ponte `runasVTT` restrita às origens da suíte, importação Tools/DM → tokens, Mesa do DM sobre tokens, dano confirmado, Registro e textos flutuantes; testes e smoke do Electron aprovados. |
