@@ -1,11 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { app, BrowserWindow, ipcMain, shell } from "electron"
-import { IPC, type AppInfo } from "../shared/ipc"
+import { IPC, type AppInfo, type BrowserCommand, type BrowserState, type Rect } from "../shared/ipc"
 import type { NewWorldInput, WorldSummary } from "../shared/world"
+import { BrowserManager, openSiteMirror } from "./browser"
+import { runBrowserSmokeTest, runSeedSites } from "./browser-tasks"
 import { WorldStore } from "./world-store"
 
 const isSmokeTest = process.argv.includes("--smoke")
+const isBrowserSmokeTest = process.argv.includes("--smoke-browser")
+const isSeed = process.argv.includes("--seed-sites")
 
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -27,12 +31,9 @@ function createMainWindow(): BrowserWindow {
 
   window.once("ready-to-show", () => window.show())
 
-  // A janela do VTT nunca navega para fora da própria interface. Sites abrem
-  // no navegador integrado (Fase 1) ou, por enquanto, no navegador do sistema.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
-    return { action: "deny" }
-  })
+  // A interface do VTT nunca navega para fora de si mesma: links abrem no
+  // navegador integrado, que tem sessão e regras próprias.
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
   window.webContents.on("will-navigate", (event, url) => {
     if (url !== window.webContents.getURL()) event.preventDefault()
   })
@@ -42,7 +43,7 @@ function createMainWindow(): BrowserWindow {
   return window
 }
 
-function registerIpc(store: WorldStore): void {
+function registerWorldIpc(store: WorldStore): void {
   const summary = (world: { summary: WorldSummary }) => world.summary
   ipcMain.handle(IPC.appInfo, (): AppInfo => ({ version: app.getVersion(), electron: process.versions.electron, worldsRoot: store.root }))
   ipcMain.handle(IPC.listWorlds, () => store.list())
@@ -53,6 +54,18 @@ function registerIpc(store: WorldStore): void {
     const world = (await store.list()).find((candidate) => candidate.id === id)
     if (world) await shell.openPath(world.path)
   })
+}
+
+function registerBrowserIpc(browser: BrowserManager): void {
+  ipcMain.handle(IPC.browserState, () => browser.state())
+  ipcMain.handle(IPC.browserOpen, (_event, url: string) => browser.open(url))
+  ipcMain.handle(IPC.browserActivate, (_event, id: number) => browser.activate(id))
+  ipcMain.handle(IPC.browserClose, (_event, id: number) => browser.close(id))
+  ipcMain.handle(IPC.browserNavigate, (_event, id: number, url: string) => browser.navigate(id, url))
+  ipcMain.handle(IPC.browserCommand, (_event, id: number, command: BrowserCommand) => browser.command(id, command))
+  ipcMain.handle(IPC.browserSetBounds, (_event, bounds: Rect | null) => browser.setBounds(bounds))
+  ipcMain.handle(IPC.browserSetForcedOffline, (_event, offline: boolean) => browser.setForcedOffline(offline))
+  ipcMain.handle(IPC.browserPrepareOffline, () => browser.prepareOffline())
 }
 
 /** `electron . --smoke`: exercita o armazenamento dentro do runtime real do Electron e encerra. */
@@ -83,13 +96,20 @@ async function runSmokeTest(): Promise<void> {
 
 void app.whenReady().then(() => {
   if (isSmokeTest) { void runSmokeTest(); return }
+  if (isBrowserSmokeTest) { void runBrowserSmokeTest().finally(() => app.quit()); return }
+  if (isSeed) { void runSeedSites().finally(() => app.quit()); return }
+
   const store = new WorldStore(join(app.getPath("userData"), "worlds"))
-  registerIpc(store)
-  createMainWindow()
-  app.on("before-quit", () => store.close())
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow() })
+  const mirror = openSiteMirror()
+  registerWorldIpc(store)
+  const window = createMainWindow()
+  const browser = new BrowserManager(window, mirror, (state: BrowserState) => window.webContents.send(IPC.browserStateChanged, state))
+  registerBrowserIpc(browser)
+  app.on("before-quit", () => {
+    browser.destroy()
+    mirror.close()
+    store.close()
+  })
 })
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit()
-})
+app.on("window-all-closed", () => app.quit())

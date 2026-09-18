@@ -62,7 +62,8 @@ RunasVTT (Electron 44 · Node 24 · Chromium)
  ├── Processo principal (src/main)
  │     ├── WorldStore: pasta de mundos, manifesto, abrir/fechar
  │     ├── WorldDatabase: SQLite nativo do Node (node:sqlite), migrações por user_version
- │     ├── [Fase 1] Navegador integrado: sessão persistente + espelho local same-origin
+ │     ├── BrowserManager: abas (WebContentsView), sessões persist:runas-sites e persist:web
+ │     ├── SiteMirror + site-responder: cópia local same-origin (node:sqlite), atualização automática
  │     └── [Fase 3] Ponte runasVTT: IPC restrito às origens da Runas Suite
  ├── Preload (src/preload): expõe window.vtt para a interface do VTT
  ├── Interface (src/renderer): React 19 + [Fase 2] PixiJS 8 no canvas
@@ -218,7 +219,7 @@ Registradas em 2026-09-18.
 | # | Fase | Onde | Estimativa | Status |
 |---|---|---|---|---|
 | 0 | Fundações: Electron + Vite + React + TS, formato do mundo, ADRs | RunasVTT | 1 sem | **Concluída** (2026-09-18) |
-| 1 | Navegador integrado: abas, sessão persistente, espelho local same-origin, atualização, ponte restrita por origem | RunasVTT | 2–3 sem | Pendente |
+| 1 | Navegador integrado: abas, sessão persistente, espelho local same-origin, atualização | RunasVTT | 2–3 sem | **Concluída** (2026-09-18). A ponte `runasVTT` foi para a Fase 3, junto do contrato. |
 | 2 | Canvas essencial: cenas, grade quadrada/hex, tokens, barras PV/PA/PE, régua, tiles, desenhos, notas | RunasVTT | 3–4 sem | Pendente |
 | 3 | Integração: contrato da ponte, exportar→importar, dano no token selecionado, testes no Registro, Mesa sobre tokens | ambos | 2–3 sem | Pendente |
 | 4 | Imagem → token: `CHARACTER_VERSION`, migração, editor de token no DM, campo no Tools | runas-suite | 1 sem | Pendente |
@@ -258,25 +259,37 @@ Atualizado em 2026-09-18.
 - `9e52973`: Runas Book, área DM só com token. Publicado em `runas-book.pages.dev`.
 - Secrets na Cloudflare: token novo cadastrado no DM e no Book; `RUNAS_DM_CAMPAIGN_PASSWORD` removido pelo usuário. O mesmo token vale nos dois sites (confirmado pelo usuário).
 
-### RunasVTT (Fase 0 concluída)
+### RunasVTT (Fases 0 e 1 concluídas)
 
-**Feito:**
-- Repositório privado criado no GitHub e clonado em `C:\Users\joaoa\Desktop\Repositorios\RunasVTT`.
-- Dependências: Electron 44.4.2 (Node 24.21), electron-vite 5, Vite 7, React 19, TypeScript 5.9, Vitest 3. Os scripts de instalação do `electron` e do `esbuild` foram liberados em `allowScripts`.
-- Verificado que `node:sqlite` funciona dentro do Electron 44.
-- `src/shared/world.ts`: formato do mundo v1, tipos de documento e validação do manifesto.
-- `src/shared/ipc.ts`: canais IPC e a API `window.vtt`.
-- `src/main/world-database.ts`: SQLite com migrações, CRUD de documentos e exclusão em cascata.
-- `src/main/world-store.ts`: listar, criar, abrir e fechar mundos, com gravação atômica do manifesto.
-- `src/main/index.ts`: janela segura (contextIsolation, sandbox, navegação bloqueada), IPC e modo `--smoke`.
-- `src/preload`: expõe `window.vtt`.
-- `src/renderer`: tela de mundos (criar e abrir) e esqueleto da mesa (barra superior, área do canvas, painel lateral com abas das próximas fases). Há uma API em memória para visualização no navegador comum.
-- Testes: 10 passando (formato do mundo, armazenamento e banco).
-- Typecheck passando; `npm run smoke` passa no Electron 44 real (SQLite, migração, exclusão em cascata).
-- Interface verificada no Electron real via DevTools Protocol: `window.vtt` disponível, sem acesso ao Node na página, criação e abertura de mundo funcionando, com capturas de tela conferidas.
-- ADRs 0001–0007 em `docs/adr/`, `AGENTS.md`/`CLAUDE.md` com as regras do projeto, `README.md` e CI (GitHub Actions: typecheck, testes e build).
+**Fase 0: fundações**
+- Electron 44.4.2 (Node 24.21), electron-vite 5, Vite 7, React 19, TypeScript 5.9 e Vitest 3.
+- Mundo em pasta (`world.json`, `world.db` com `node:sqlite` e `assets/`); tela de mundos e esqueleto da mesa.
+- ADRs 0001–0007, `AGENTS.md`, README e CI.
 
-**Próximo passo:** Fase 1, navegador integrado com espelho local na mesma origem (ADR 0002).
+**Fase 1: navegador integrado**
+- **Abas e interface:** abas em `WebContentsView` no painel lateral (redimensionável, com botão para expandir), barra de endereço, voltar, avançar, recarregar e uma nova aba com atalhos para os 3 sites ou qualquer endereço.
+- **Cópia local na mesma origem:** a página continua em `https://runas-*.pages.dev` com internet ou sem ela, e os dados dos sites (IndexedDB) ficam os mesmos.
+- **Sessões separadas:** os sites da suíte ficam em `persist:runas-sites`, com cópia local; a web externa fica em `persist:web`, sem interceptação.
+- **Indicador de origem:** mostra se a página veio *Online*, da *Cópia local* ou está *Indisponível*.
+- **Painel "Funcionamento offline":**
+  - *Preparar offline*, com progresso;
+  - tamanho da cópia de cada site;
+  - *Forçar modo offline*, para testar ou para usar sem rede.
+- **Atualização automática** ao abrir, quando a internet volta e a cada 6 h. Arquivos de builds antigos são limpos.
+- **Cópia inicial para a primeira execução:** `npm run seed:sites`.
+- **Nunca copiados:** `/api/*`, `/cdn-cgi/*`, RSC, POST e respostas com `no-store` ou `set-cookie`.
+- **Verificações:**
+  - 27 testes unitários;
+  - `npm run smoke`;
+  - `npm run smoke:browser` contra os sites reais: online, redirecionamento 308, POST (401), cópia de 84 arquivos sem falhas e as 8 páginas principais dos 3 sites abrindo offline sem nenhuma requisição à rede;
+  - teste de ponta a ponta da interface no Electron via DevTools Protocol: a página ocupa exatamente a área reservada, e *Preparar offline* seguido de modo offline forçado e recarga abriu o Runas DM da cópia, com as fichas preservadas.
+
+**Importante para o uso:** o navegador do VTT é um perfil separado do Chrome. As fichas e a Wiki que você já tem no Chrome **não aparecem** automaticamente no VTT. Para levá-las, use uma destas opções:
+- Runas DM: token de backup → *Backup na nuvem* no Chrome → *Importar da nuvem* no VTT;
+- exportação e importação de JSON/ZIP;
+- sincronização com o Obsidian.
+
+**Próximo passo:** Fase 2, o canvas essencial (cenas, grade, tokens).
 
 ---
 
@@ -289,8 +302,13 @@ Atualizado em 2026-09-18.
 - Core: imagem de token no `Character`, com `CHARACTER_VERSION`, migração e teste. Tools: campo na ficha avançada. DM: editor de token.
 - Revisar os service workers da suíte para convivência com o espelho local do VTT.
 
+### Pendências da Fase 1 que dependem de outras fases ou de você
+- **Obsidian por pasta local no Electron:** não dá para automatizar (exige escolher a pasta no diálogo). A permissão `fileSystem` está liberada na sessão da suíte; validar manualmente.
+- **Card "Instalar Runas DM" (PWA) aparece dentro do VTT:** esconder quando `window.runasVTT` existir (mudança na suíte, Fase 3).
+- **Cloudflare Access não está ativo em `runas-dm.pages.dev`** (a página responde 200 sem login), apesar de a documentação da suíte exigir. O risco é baixo (dados locais, API com token), mas a configuração deve ser conferida no painel da Cloudflare.
+
 ### Riscos
-- **Espelho same-origin:** a interceptação de `https` no Electron precisa conviver com os service workers dos sites e com o Cloudflare Access. É a validação mais importante da Fase 1.
+- **Espelho same-origin:** validado na Fase 1, inclusive com os service workers dos sites. Resta observar o comportamento quando um site publicar um build novo enquanto o VTT estiver offline por muito tempo.
 - **Obsidian no Electron:** permissões da File System Access API.
 - **Desempenho de visão e luz** em mapas grandes (Fase 6): mitigar com Web Workers e cache de polígonos.
 - **Deriva do contrato da ponte** entre dois repositórios: mitigar com versionamento e testes dos dois lados.
@@ -310,4 +328,5 @@ Atualizado em 2026-09-18.
 | 2026-09-18 | Runas Suite `9e52973`: Book só com token (M15). Publicado. |
 | 2026-09-18 | Início da Fase 0: base Electron + React, formato do mundo v1 com SQLite, testes. |
 | 2026-09-18 | Criado este documento. |
+| 2026-09-18 | Fase 1 concluída: navegador integrado com cópia local na mesma origem, sessões suíte/web separadas, atualização automática, modo offline forçado, cópia inicial (`seed:sites`) e teste contra os sites reais (`smoke:browser`). Correções encontradas nos testes: redirecionamento (troca de `session.fetch` por `net.request`), HEAD offline, assets referenciados por CSS, manifesto e service worker, e área da página com altura zero. |
 | 2026-09-18 | Fase 0 concluída: ADRs 0001–0007, AGENTS.md, README, CI, smoke test no Electron e verificação visual (corrigido botão "Mundos" esticado na barra da mesa). |

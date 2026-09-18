@@ -5,3 +5,5 @@ dist/
 .DS_Store
 .vite/
 *.tsbuildinfo
+resources/site-seed.db
+resources/site-seed.db-*

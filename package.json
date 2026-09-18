@@ -13,7 +13,9 @@
     "start": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
-    "smoke": "electron-vite build && electron . --smoke"
+    "smoke": "electron-vite build && electron . --smoke",
+    "smoke:browser": "electron-vite build && electron . --smoke-browser",
+    "seed:sites": "electron-vite build && electron . --seed-sites"
   },
   "devDependencies": {
     "@types/node": "^24.13.5",
