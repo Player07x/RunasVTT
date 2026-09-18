@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import { IPC, type BrowserState, type VttApi } from "../shared/ipc"
+import { IPC, type BrowserState, type DocumentChange, type VttApi } from "../shared/ipc"
 
 const api: VttApi = {
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
@@ -8,6 +8,19 @@ const api: VttApi = {
   openWorld: (id) => ipcRenderer.invoke(IPC.openWorld, id),
   closeWorld: () => ipcRenderer.invoke(IPC.closeWorld),
   revealWorld: (id) => ipcRenderer.invoke(IPC.revealWorld, id),
+  documents: {
+    list: (type, parentId) => ipcRenderer.invoke(IPC.documentsList, type, parentId),
+    put: (input) => ipcRenderer.invoke(IPC.documentsPut, input),
+    remove: (id) => ipcRenderer.invoke(IPC.documentsDelete, id),
+    onChange: (listener) => {
+      const handler = (_event: unknown, change: DocumentChange) => listener(change)
+      ipcRenderer.on(IPC.documentsChanged, handler)
+      return () => { ipcRenderer.removeListener(IPC.documentsChanged, handler) }
+    },
+  },
+  assets: {
+    import: (kind, fileName, bytes) => ipcRenderer.invoke(IPC.assetsImport, kind, fileName, bytes),
+  },
   browser: {
     state: () => ipcRenderer.invoke(IPC.browserState),
     onState: (listener) => {

@@ -98,6 +98,14 @@ export class WorldDatabase {
     return (rows as unknown as DocumentRow[]).map(toDocument)
   }
 
+  /** Ids do documento e de tudo o que ele contém, em qualquer profundidade. */
+  descendantIds(id: string): string[] {
+    const rows = this.db.prepare(
+      `WITH RECURSIVE tree(id) AS (SELECT id FROM documents WHERE id = ? UNION ALL SELECT d.id FROM documents d JOIN tree t ON d.parent_id = t.id) SELECT id FROM tree`,
+    ).all(id) as { id: string }[]
+    return rows.map((row) => row.id)
+  }
+
   /** Remove o documento e, pela chave estrangeira, tudo o que ele contém. */
   delete(id: string): void {
     this.db.prepare("DELETE FROM documents WHERE id = ?").run(id)

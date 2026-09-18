@@ -63,10 +63,13 @@ RunasVTT (Electron 44 · Node 24 · Chromium)
  │     ├── WorldStore: pasta de mundos, manifesto, abrir/fechar
  │     ├── WorldDatabase: SQLite nativo do Node (node:sqlite), migrações por user_version
  │     ├── BrowserManager: abas (WebContentsView), sessões persist:runas-sites e persist:web
+ │     ├── world-documents: único caminho de escrita (valida, normaliza, transmite)
+ │     ├── world-assets + protocolo vtt-asset://: imagens pelo hash do conteúdo
  │     ├── SiteMirror + site-responder: cópia local same-origin (node:sqlite), atualização automática
  │     └── [Fase 3] Ponte runasVTT: IPC restrito às origens da Runas Suite
  ├── Preload (src/preload): expõe window.vtt para a interface do VTT
- ├── Interface (src/renderer): React 19 + [Fase 2] PixiJS 8 no canvas
+ ├── Interface (src/renderer): React 19 + PixiJS 8 (SceneView, reutilizável na Vista dos Jogadores)
+ │     └── DocumentStore: cópia dos documentos, atualizada pelas transmissões do processo principal
  └── [Fase 5] Janela da Vista dos Jogadores (sem HUD)
 ```
 
@@ -220,7 +223,7 @@ Registradas em 2026-09-18.
 |---|---|---|---|---|
 | 0 | Fundações: Electron + Vite + React + TS, formato do mundo, ADRs | RunasVTT | 1 sem | **Concluída** (2026-09-18) |
 | 1 | Navegador integrado: abas, sessão persistente, espelho local same-origin, atualização | RunasVTT | 2–3 sem | **Concluída** (2026-09-18). A ponte `runasVTT` foi para a Fase 3, junto do contrato. |
-| 2 | Canvas essencial: cenas, grade quadrada/hex, tokens, barras PV/PA/PE, régua, tiles, desenhos, notas | RunasVTT | 3–4 sem | Pendente |
+| 2 | Canvas essencial: cenas, grade quadrada/hex, tokens, barras PV/PA/PE, régua, tiles, desenhos, notas | RunasVTT | 3–4 sem | **Concluída** (2026-09-18) |
 | 3 | Integração: contrato da ponte, exportar→importar, dano no token selecionado, testes no Registro, Mesa sobre tokens | ambos | 2–3 sem | Pendente |
 | 4 | Imagem → token: `CHARACTER_VERSION`, migração, editor de token no DM, campo no Tools | runas-suite | 1 sem | Pendente |
 | 5 | Vista dos Jogadores (janela sem HUD) | RunasVTT | 1–2 sem | Pendente |
@@ -244,6 +247,7 @@ Registradas em 2026-09-18.
 | 0004 | Mundo = pasta com `world.json`, `world.db` (SQLite `node:sqlite`) e `assets/` | Backup por cópia, sem módulo nativo, migrações versionadas |
 | 0005 | Vista dos Jogadores = janela Electron separada que renderiza a cena sem HUD | M6. Funciona em outro monitor, TV, Discord ou OBS. |
 | 0006 | O VTT é a fonte da verdade dos tokens; o token é uma cópia independente da ficha | M13. Evita duas "mesas" divergentes e mantém a regra da Mesa do DM. |
+| 0008 | Cena: documentos normalizados no processo principal, assets por hash via `vtt-asset://` (CORS), `SceneView` imperativo em PixiJS com `unsafe-eval` oficial | Uma única regra de dados, cache seguro e renderizador pronto para a Vista dos Jogadores |
 | 0007 | Electron em vez de Tauri | Chromium embutido e controlado para o navegador integrado, e ecossistema TypeScript |
 
 Os ADRs detalhados ficam em [`docs/adr/`](adr/).
@@ -259,7 +263,7 @@ Atualizado em 2026-09-18.
 - `9e52973`: Runas Book, área DM só com token. Publicado em `runas-book.pages.dev`.
 - Secrets na Cloudflare: token novo cadastrado no DM e no Book; `RUNAS_DM_CAMPAIGN_PASSWORD` removido pelo usuário. O mesmo token vale nos dois sites (confirmado pelo usuário).
 
-### RunasVTT (Fases 0 e 1 concluídas)
+### RunasVTT (Fases 0, 1 e 2 concluídas)
 
 **Fase 0: fundações**
 - Electron 44.4.2 (Node 24.21), electron-vite 5, Vite 7, React 19, TypeScript 5.9 e Vitest 3.
@@ -289,7 +293,45 @@ Atualizado em 2026-09-18.
 - exportação e importação de JSON/ZIP;
 - sincronização com o Obsidian.
 
-**Próximo passo:** Fase 2, o canvas essencial (cenas, grade, tokens).
+**Fase 2: canvas essencial**
+- **Cenas (aba *Cenas*):**
+  - criar, abrir, renomear e excluir, com confirmação; excluir uma cena apaga tudo o que ela contém;
+  - mapa de fundo importado, e a cena assume o tamanho da imagem;
+  - cor de fundo e tamanho em pixels;
+  - lembra a última cena aberta de cada mundo.
+- **Grade:**
+  - quadrada, hexagonal (fileiras ou colunas) ou sem grade;
+  - tamanho da célula e deslocamento X/Y, para alinhar com mapas que já têm grade desenhada;
+  - valor da célula e unidade (padrão 1,5 m);
+  - regra das diagonais;
+  - cor e opacidade.
+- **Tokens:**
+  - imagem ou inicial do nome, com borda na cor da disposição (aliado, neutro, hostil ou secreto);
+  - tamanho em células, rotação e elevação;
+  - até 3 barras (PV, PA, PE) nas cores da suíte;
+  - nome visível ou não;
+  - ocultar dos jogadores (fica translúcido para o mestre) e travar a posição.
+- **Outros objetos:**
+  - tiles (imagens soltas) acima ou abaixo dos tokens, com opacidade e rotação; também é possível arrastar arquivos de imagem para o mapa;
+  - desenhos: retângulo, elipse, mão livre e texto, com cores e espessura;
+  - notas no mapa ligadas a uma página: duplo clique abre no navegador integrado (ex.: a Wiki do DM).
+- **Interação:**
+  - selecionar, com Shift para somar e caixa de seleção;
+  - arrastar com encaixe na grade (Alt ignora o encaixe) e régua automática ao arrastar um token;
+  - ferramenta *Régua* (distância na unidade da cena e em células);
+  - botão direito arrasta o mapa, a roda do mouse aproxima, e *Enquadrar cena* reenquadra;
+  - atalhos: V, R, T, D, N para as ferramentas; setas movem uma célula; Delete exclui; H oculta; Esc cancela.
+- **Painel de propriedades** para o objeto selecionado, e ações em lote para vários.
+- **Verificação:**
+  - 44 testes, incluindo a geometria das grades quadrada e hexagonal, a normalização dos dados e o protocolo dos assets;
+  - teste de ponta a ponta no Electron real, com mouse simulado: mapa importado e exibido; token arrastado encaixando exatamente na célula esperada; token e nota criados pelas ferramentas; régua medindo 4 células = 6 m; retângulo desenhado; troca para grade hexagonal; nenhum erro no console.
+- **Problemas encontrados e corrigidos nos testes:**
+  - o PixiJS exigia `unsafe-eval` (resolvido com o módulo oficial `pixi.js/unsafe-eval`, sem afrouxar a CSP);
+  - imagens do mundo não carregavam (`net.fetch` de `file://` falhava, trocado por leitura direta);
+  - o WebGL recusava as imagens (faltava CORS);
+  - a cena não reenquadrava ao trocar o mapa.
+
+**Próximo passo:** Fase 3, a integração com a Runas Suite (contrato da ponte, importar ficha do Tools/DM como token, dano no token selecionado, testes no Registro e Mesa do DM sobre os tokens).
 
 ---
 
@@ -306,6 +348,12 @@ Atualizado em 2026-09-18.
 - **Obsidian por pasta local no Electron:** não dá para automatizar (exige escolher a pasta no diálogo). A permissão `fileSystem` está liberada na sessão da suíte; validar manualmente.
 - **Card "Instalar Runas DM" (PWA) aparece dentro do VTT:** esconder quando `window.runasVTT` existir (mudança na suíte, Fase 3).
 - **Cloudflare Access não está ativo em `runas-dm.pages.dev`** (a página responde 200 sem login), apesar de a documentação da suíte exigir. O risco é baixo (dados locais, API com token), mas a configuração deve ser conferida no painel da Cloudflare.
+
+### Limitações conhecidas da Fase 2 (para fases futuras)
+- Sem desfazer/refazer.
+- Sem alças para redimensionar ou girar com o mouse (é feito pelo painel de propriedades).
+- Ao trocar a grade de quadrada para hexagonal, os tokens não são reencaixados automaticamente.
+- A camada de névoa, visão e luz chega na Fase 6.
 
 ### Riscos
 - **Espelho same-origin:** validado na Fase 1, inclusive com os service workers dos sites. Resta observar o comportamento quando um site publicar um build novo enquanto o VTT estiver offline por muito tempo.
@@ -328,5 +376,6 @@ Atualizado em 2026-09-18.
 | 2026-09-18 | Runas Suite `9e52973`: Book só com token (M15). Publicado. |
 | 2026-09-18 | Início da Fase 0: base Electron + React, formato do mundo v1 com SQLite, testes. |
 | 2026-09-18 | Criado este documento. |
+| 2026-09-18 | Fase 2 concluída: cenas, grades quadrada e hexagonal, tokens, tiles, desenhos, notas, régua, seleção e arraste, painel de propriedades, importação de imagens por hash (`vtt-asset://`) e ADR 0008. |
 | 2026-09-18 | Fase 1 concluída: navegador integrado com cópia local na mesma origem, sessões suíte/web separadas, atualização automática, modo offline forçado, cópia inicial (`seed:sites`) e teste contra os sites reais (`smoke:browser`). Correções encontradas nos testes: redirecionamento (troca de `session.fetch` por `net.request`), HEAD offline, assets referenciados por CSS, manifesto e service worker, e área da página com altura zero. |
 | 2026-09-18 | Fase 0 concluída: ADRs 0001–0007, AGENTS.md, README, CI, smoke test no Electron e verificação visual (corrigido botão "Mundos" esticado na barra da mesa). |

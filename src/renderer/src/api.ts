@@ -1,6 +1,10 @@
-import type { BrowserState, VttApi } from "../../shared/ipc"
+import { assetUrl, type BrowserState, type DocumentChange, type VttApi } from "../../shared/ipc"
+import { normalizeDocumentData, type AssetPath } from "../../shared/scene"
 import { SUITE_SITES } from "../../shared/sites"
-import { createWorldManifest, type WorldSummary } from "../../shared/world"
+import { createWorldManifest, type WorldDocument, type WorldSummary } from "../../shared/world"
+
+/** Na visualização em navegador comum, imagens importadas viram URLs `blob:`. */
+const previewAssets = new Map<AssetPath, string>()
 
 /**
  * Fora do Electron (ex.: `vite` aberto num navegador comum) não existe
@@ -20,6 +24,8 @@ function createBrowserPreviewApi(): VttApi {
     preparation: { running: false, siteId: null, done: 0, total: 0, failed: 0, finishedAt: null },
   }
   const emit = () => listeners.forEach((listener) => listener(structuredClone(state)))
+  const documents = new Map<string, WorldDocument>()
+  const documentListeners = new Set<(change: DocumentChange) => void>()
   return {
     appInfo: async () => ({ version: "dev", electron: "—", worldsRoot: "(memória do navegador)" }),
     listWorlds: async () => [...worlds].sort((a, b) => b.updatedAt - a.updatedAt),
@@ -37,6 +43,32 @@ function createBrowserPreviewApi(): VttApi {
     },
     closeWorld: async () => undefined,
     revealWorld: async () => undefined,
+    documents: {
+      list: async (type, parentId) => [...documents.values()].filter((document) => document.type === type && (parentId === undefined || document.parentId === parentId)),
+      put: async (input) => {
+        const now = Date.now()
+        const existing = documents.get(input.id)
+        const document: WorldDocument = { id: input.id, type: input.type, parentId: input.parentId, sort: input.sort ?? existing?.sort ?? now, data: normalizeDocumentData(input.type, input.data), createdAt: existing?.createdAt ?? now, updatedAt: now }
+        documents.set(document.id, document)
+        documentListeners.forEach((listener) => listener({ kind: "put", document }))
+        return document
+      },
+      remove: async (id) => {
+        const ids = [id, ...[...documents.values()].filter((document) => document.parentId === id).map((document) => document.id)]
+        ids.forEach((candidate) => documents.delete(candidate))
+        documentListeners.forEach((listener) => listener({ kind: "delete", ids }))
+      },
+      onChange: (listener) => { documentListeners.add(listener); return () => { documentListeners.delete(listener) } },
+    },
+    assets: {
+      import: async (kind, fileName, bytes) => {
+        const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource))].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+        const extension = fileName.split(".").pop()?.toLowerCase() ?? "png"
+        const path = `${kind}/${hash}.${extension}`
+        previewAssets.set(path, URL.createObjectURL(new Blob([bytes as BlobPart])))
+        return path
+      },
+    },
     browser: {
       state: async () => structuredClone(state),
       onState: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
@@ -64,3 +96,8 @@ function createBrowserPreviewApi(): VttApi {
 
 export const vtt: VttApi = window.vtt ?? createBrowserPreviewApi()
 export const isBrowserPreview = !window.vtt
+
+/** URL de um asset do mundo para `<img>` e texturas. */
+export function resolveAssetUrl(path: AssetPath): string {
+  return previewAssets.get(path) ?? assetUrl(path)
+}

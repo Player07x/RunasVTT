@@ -1,11 +1,17 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
-import { app, BrowserWindow, ipcMain, shell } from "electron"
-import { IPC, type AppInfo, type BrowserCommand, type BrowserState, type Rect } from "../shared/ipc"
-import type { NewWorldInput, WorldSummary } from "../shared/world"
+import { app, BrowserWindow, ipcMain, protocol, shell } from "electron"
+import { ASSET_SCHEME, IPC, type AppInfo, type BrowserCommand, type BrowserState, type DocumentChange, type DocumentInput, type Rect } from "../shared/ipc"
+import { ASSET_KINDS, type AssetKind, type DocumentType, type NewWorldInput, type WorldSummary } from "../shared/world"
 import { BrowserManager, openSiteMirror } from "./browser"
 import { runBrowserSmokeTest, runSeedSites } from "./browser-tasks"
+import { assetResponse, importAsset } from "./world-assets"
+import { deleteDocument, listDocuments, putDocument } from "./world-documents"
 import { WorldStore } from "./world-store"
+
+// Precisa acontecer antes de "ready": o esquema dos assets se comporta como
+// https (origem própria, fetch e CORS), o que o PixiJS exige para texturas.
+protocol.registerSchemesAsPrivileged([{ scheme: ASSET_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
 
 const isSmokeTest = process.argv.includes("--smoke")
 const isBrowserSmokeTest = process.argv.includes("--smoke-browser")
@@ -56,6 +62,43 @@ function registerWorldIpc(store: WorldStore): void {
   })
 }
 
+function broadcast(change: DocumentChange): void {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC.documentsChanged, change)
+}
+
+function requireOpenWorld(store: WorldStore) {
+  const world = store.openWorld
+  if (!world) throw new Error("Nenhum mundo aberto.")
+  return world
+}
+
+function registerDocumentIpc(store: WorldStore): void {
+  ipcMain.handle(IPC.documentsList, (_event, type: DocumentType, parentId?: string | null) => listDocuments(requireOpenWorld(store).database, type, parentId))
+  ipcMain.handle(IPC.documentsPut, (_event, input: DocumentInput) => {
+    const { document, change } = putDocument(requireOpenWorld(store).database, input)
+    broadcast(change)
+    return document
+  })
+  ipcMain.handle(IPC.documentsDelete, (_event, id: string) => {
+    const change = deleteDocument(requireOpenWorld(store).database, id)
+    if (change) broadcast(change)
+  })
+  ipcMain.handle(IPC.assetsImport, (_event, kind: AssetKind, fileName: string, bytes: Uint8Array) => {
+    if (!(ASSET_KINDS as readonly string[]).includes(kind)) throw new Error("Tipo de asset inválido.")
+    return importAsset(requireOpenWorld(store).summary.path, kind, String(fileName), bytes)
+  })
+}
+
+/** Serve `vtt-asset://world/<tipo>/<arquivo>` a partir do mundo aberto; nada fora de `assets/` é acessível. */
+function registerAssetProtocol(store: WorldStore): void {
+  protocol.handle(ASSET_SCHEME, (request) => {
+    const url = new URL(request.url)
+    const world = store.openWorld
+    if (!world || url.hostname !== "world") return new Response(null, { status: 404 })
+    return assetResponse(world.summary.path, decodeURIComponent(url.pathname.slice(1)))
+  })
+}
+
 function registerBrowserIpc(browser: BrowserManager): void {
   ipcMain.handle(IPC.browserState, () => browser.state())
   ipcMain.handle(IPC.browserOpen, (_event, url: string) => browser.open(url))
@@ -102,6 +145,8 @@ void app.whenReady().then(() => {
   const store = new WorldStore(join(app.getPath("userData"), "worlds"))
   const mirror = openSiteMirror()
   registerWorldIpc(store)
+  registerDocumentIpc(store)
+  registerAssetProtocol(store)
   const window = createMainWindow()
   const browser = new BrowserManager(window, mirror, (state: BrowserState) => window.webContents.send(IPC.browserStateChanged, state))
   registerBrowserIpc(browser)

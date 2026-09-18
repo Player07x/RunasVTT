@@ -1,5 +1,6 @@
 import type { SuiteSiteId } from "./sites"
-import type { NewWorldInput, WorldSummary } from "./world"
+import type { AssetPath } from "./scene"
+import type { AssetKind, DocumentType, NewWorldInput, WorldDocument, WorldSummary } from "./world"
 
 /** Canais IPC entre a interface do VTT e o processo principal. */
 export const IPC = {
@@ -19,7 +20,31 @@ export const IPC = {
   browserSetBounds: "browser:set-bounds",
   browserSetForcedOffline: "browser:set-forced-offline",
   browserPrepareOffline: "browser:prepare-offline",
+  documentsList: "documents:list",
+  documentsPut: "documents:put",
+  documentsDelete: "documents:delete",
+  documentsChanged: "documents:changed",
+  assetsImport: "assets:import",
 } as const
+
+/** Esquema que serve os assets do mundo aberto à interface: `vtt-asset://world/<tipo>/<arquivo>`. */
+export const ASSET_SCHEME = "vtt-asset"
+
+export function assetUrl(path: AssetPath): string {
+  return `${ASSET_SCHEME}://world/${path}`
+}
+
+export interface DocumentInput {
+  id: string
+  type: DocumentType
+  parentId: string | null
+  sort?: number
+  data: unknown
+}
+
+export type DocumentChange =
+  | { kind: "put"; document: WorldDocument }
+  | { kind: "delete"; ids: string[] }
 
 export interface AppInfo {
   version: string
@@ -88,6 +113,16 @@ export interface VttApi {
   openWorld(id: string): Promise<WorldSummary>
   closeWorld(): Promise<void>
   revealWorld(id: string): Promise<void>
+  documents: {
+    list(type: DocumentType, parentId?: string | null): Promise<WorldDocument[]>
+    put(input: DocumentInput): Promise<WorldDocument>
+    remove(id: string): Promise<void>
+    onChange(listener: (change: DocumentChange) => void): () => void
+  }
+  assets: {
+    /** Copia um arquivo para o mundo aberto e devolve o caminho do asset. */
+    import(kind: AssetKind, fileName: string, bytes: Uint8Array): Promise<AssetPath>
+  }
   browser: {
     state(): Promise<BrowserState>
     onState(listener: (state: BrowserState) => void): () => void

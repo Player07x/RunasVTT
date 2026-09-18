@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "lucide-react": "^1.47.0",
+    "pixi.js": "^8.21.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

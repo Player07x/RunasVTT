@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
-import { ArrowLeft, FolderOpen, Globe, Map as MapIcon, Maximize2, Minimize2, MonitorPlay, Music, Plus, ScrollText, Swords } from "lucide-react"
+import { ArrowLeft, FolderOpen, Globe, Map as MapIcon, Maximize2, Minimize2, MonitorPlay, Music, Plus, ScrollText } from "lucide-react"
 import type { AppInfo } from "../../shared/ipc"
 import { RULESET_IDS, WORLD_TITLE_MAX_LENGTH, type RulesetId, type WorldSummary } from "../../shared/world"
 import { isBrowserPreview, vtt } from "./api"
 import { BrowserPanel } from "./BrowserPanel"
+import { SceneCanvas } from "./canvas/SceneCanvas"
+import { DocumentStore } from "./document-store"
+import { ScenesPanel } from "./ScenesPanel"
 
 const RULESET_LABELS: Record<RulesetId, string> = { "runas-blue": "Runas", cronos: "Cronos" }
 
@@ -81,7 +84,7 @@ type SideTab = "browser" | "scenes" | "audio" | "log"
 
 const SIDE_TABS: { id: SideTab; label: string; icon: typeof Globe; phase: string; description: string }[] = [
   { id: "browser", label: "Navegador", icon: Globe, phase: "Fase 1", description: "Runas Tools, Runas DM e Runas Book, funcionando offline." },
-  { id: "scenes", label: "Cenas", icon: MapIcon, phase: "Fase 2", description: "Lista de cenas do mundo, com mapa, grade e tokens." },
+  { id: "scenes", label: "Cenas", icon: MapIcon, phase: "Fase 2", description: "Cenas do mundo: mapa, grade e objetos." },
   { id: "audio", label: "Áudio", icon: Music, phase: "Fase 7", description: "Playlists com arquivos importados para o mundo." },
   { id: "log", label: "Registro", icon: ScrollText, phase: "Fase 3", description: "Testes e danos enviados pelos sites da Runas Suite." },
 ]
@@ -98,8 +101,38 @@ function clampPanelWidth(width: number): number {
   return Math.max(PANEL_MIN, Math.min(width, window.innerWidth - CANVAS_MIN))
 }
 
+const lastSceneKey = (worldId: string) => `runas-vtt.last-scene.${worldId}`
+
+function readLastScene(worldId: string): string | null {
+  try { return localStorage.getItem(lastSceneKey(worldId)) } catch { return null }
+}
+
 function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => void }) {
-  const [tab, setTab] = useState<SideTab>("browser")
+  const [store] = useState(() => new DocumentStore())
+  const [loaded, setLoaded] = useState(false)
+  const [sceneId, setSceneId] = useState<string | null>(null)
+  const [tab, setTab] = useState<SideTab>("scenes")
+
+  useEffect(() => {
+    void store.load().then(() => {
+      const remembered = readLastScene(world.id)
+      const scenes = store.scenes()
+      setSceneId(scenes.some((scene) => scene.id === remembered) ? remembered : scenes[0]?.id ?? null)
+      if (scenes.length) setTab("browser")
+      setLoaded(true)
+    })
+    return () => store.dispose()
+  }, [store, world.id])
+
+  function openScene(id: string | null) {
+    setSceneId(id)
+    try { if (id) localStorage.setItem(lastSceneKey(world.id), id) } catch { /* preferência opcional */ }
+  }
+
+  function openUrl(url: string) {
+    setTab("browser")
+    void vtt.browser.open(url)
+  }
   const [panelWidth, setPanelWidth] = useState(() => clampPanelWidth(readPanelWidth()))
   const [expanded, setExpanded] = useState(false)
   const dragging = useRef(false)
@@ -136,11 +169,7 @@ function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => vo
       <button className="ghost" disabled title="Fase 5"><MonitorPlay size={16} /> Vista dos Jogadores</button>
     </header>
     <section className="canvas-area" aria-label="Cena">
-      <div className="canvas-placeholder">
-        <Swords size={28} />
-        <strong>Nenhuma cena aberta</strong>
-        <p>O mapa, a grade e os tokens chegam na Fase 2.</p>
-      </div>
+      {loaded && <SceneCanvas store={store} sceneId={sceneId} onOpenUrl={openUrl} />}
     </section>
     <aside className="side-panel">
       <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Redimensionar painel" onPointerDown={startResize} onPointerMove={resize} onPointerUp={endResize} onPointerCancel={endResize} />
@@ -149,7 +178,7 @@ function TableShell({ world, onClose }: { world: WorldSummary; onClose: () => vo
         <span className="side-tabs-spacer" />
         <button onClick={() => setExpanded((value) => !value)} title={expanded ? "Recolher painel" : "Expandir painel"} aria-label={expanded ? "Recolher painel" : "Expandir painel"}>{expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
       </nav>
-      {tab === "browser" ? <BrowserPanel suspended={resizing} /> : <div className="side-content">
+      {tab === "browser" ? <BrowserPanel suspended={resizing} /> : tab === "scenes" ? <ScenesPanel store={store} sceneId={sceneId} onOpen={openScene} /> : <div className="side-content">
         <p className="eyebrow">{current.phase}</p>
         <h2>{current.label}</h2>
         <p className="muted">{current.description}</p>
