@@ -44,7 +44,8 @@ export async function importCharacters(database: WorldDatabase, worldPath: strin
   const characters = items.map(normalizeBridgeCharacter)
   const scene = openScene(database, table)
   const grid = scene.data.grid
-  const step = grid.type === "none" ? 100 : grid.size
+  // Uma célula livre entre tokens: nomes e barras não se sobrepõem.
+  const step = (grid.type === "none" ? 100 : grid.size) * 2
   const center = table.center ?? { x: scene.data.width / 2, y: scene.data.height / 2 }
   const columns = Math.ceil(Math.sqrt(characters.length))
   const tokenIds: string[] = []

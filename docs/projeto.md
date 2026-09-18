@@ -339,7 +339,24 @@ Atualizado em 2026-09-18.
 - A ficha continua opaca no VTT: envelope, barras e imagem são calculados pela suíte; o VTT apenas normaliza limites de transporte, persiste e renderiza.
 - **Verificação:** `npm run typecheck`, `npm test` e `npm run smoke` passaram; 53 testes (incluindo 9 da ponte) e o smoke do Electron confirmaram a persistência de tokens e a remoção em cascata da cena.
 
-**Próximo passo:** Fase 4, imagem da ficha como token: `Character.portraitDataUrl` já existe no DM, mas ainda falta revisar a migração e a ficha avançada do Tools.
+- **Revisão da Fase 3 (feita pelo Claude sobre o trabalho do Codex):**
+  - **Bloqueante:** o commit da suíte usava `@runas/core/lib/characterSummary` sem versionar o arquivo; o CI não compilaria. Nada tinha sido enviado, então nada quebrado foi publicado. Corrigido no commit `94a248c` da suíte.
+  - As mensagens de erro do VTT chegavam aos sites com o prefixo técnico do Electron ("Error invoking remote method…"). O preload da ponte passou a entregar só o motivo (`cleanRemoteError`), com teste.
+  - O Tools escondia o motivo da recusa (ex.: "Abra uma cena no RunasVTT antes de importar"); agora mostra.
+  - "Iniciar encontro" das Campanhas gravava o encontro na Mesa local, que fica oculta dentro do VTT. Agora envia as criaturas como tokens.
+  - Tokens importados ficavam colados e com os nomes sobrepostos; agora há uma célula livre entre eles.
+  - As regras de produto da suíte ganharam a seção "Integração com o RunasVTT".
+- **Verificação da suíte:** o commit publicado foi testado isoladamente (exportado sem as alterações locais pendentes): testes 37 + 3 + 8 + 82, typecheck e builds do Tools e do DM ok. O JavaScript inicial do Tools ficou em 676 KB, com limite de 700 KB. Os três deploys foram bem-sucedidos.
+- **Teste de ponta a ponta contra os sites publicados, no Electron real:**
+  - a ponte apareceu no DM (protocolo 1) e o cartão PWA ficou oculto;
+  - "Enviar fichas ao VTT" criou 2 tokens com barras calculadas pelo core;
+  - o clique no token no mapa virou o alvo automático na Mesa;
+  - o dano de 10 cortante levou o token a PV 14/16 e PA 0/7, com "-9" no Registro;
+  - o teste rolado também foi registrado;
+  - nenhum erro no console;
+  - fora do VTT, o DM segue com "Exportar fichas" e sem ponte.
+
+**Próximo passo:** Fase 4, imagem de token no `Character` (PNG/WebP com transparência, novo `CHARACTER_VERSION`, migração, editor de token no DM e campo no Tools). Hoje o token usa o retrato da ficha.
 
 ---
 
@@ -359,6 +376,10 @@ Atualizado em 2026-09-18.
 - Sem alças para redimensionar ou girar com o mouse (é feito pelo painel de propriedades).
 - Ao trocar a grade de quadrada para hexagonal, os tokens não são reencaixados automaticamente.
 - A camada de névoa, visão e luz chega na Fase 6.
+
+### Achados fora do escopo
+- O repositório da suíte versiona a pasta `.pnpm-store/` (2.814 arquivos) desde o primeiro commit. Isso incha o repositório e impede criar *worktrees* no Windows (caminhos longos demais). Sugestão: remover do Git e ignorar.
+- O JavaScript inicial do Tools está a 24 KB do limite do `check:bundle`.
 
 ### Riscos
 - **Espelho same-origin:** validado na Fase 1, inclusive com os service workers dos sites. Resta observar o comportamento quando um site publicar um build novo enquanto o VTT estiver offline por muito tempo.
@@ -384,4 +405,5 @@ Atualizado em 2026-09-18.
 | 2026-09-18 | Fase 2 concluída: cenas, grades quadrada e hexagonal, tokens, tiles, desenhos, notas, régua, seleção e arraste, painel de propriedades, importação de imagens por hash (`vtt-asset://`) e ADR 0008. |
 | 2026-09-18 | Fase 1 concluída: navegador integrado com cópia local na mesma origem, sessões suíte/web separadas, atualização automática, modo offline forçado, cópia inicial (`seed:sites`) e teste contra os sites reais (`smoke:browser`). Correções encontradas nos testes: redirecionamento (troca de `session.fetch` por `net.request`), HEAD offline, assets referenciados por CSS, manifesto e service worker, e área da página com altura zero. |
 | 2026-09-18 | Fase 0 concluída: ADRs 0001–0007, AGENTS.md, README, CI, smoke test no Electron e verificação visual (corrigido botão "Mundos" esticado na barra da mesa). |
+| 2026-09-18 | Revisão da Fase 3: corrigidos o arquivo do core que faltava no commit da suíte, as mensagens de erro da ponte, o "Iniciar encontro" dentro do VTT e o espaçamento dos tokens importados; suíte publicada; teste de ponta a ponta contra os sites reais aprovado. |
 | 2026-09-18 | Fase 3 concluída: ponte `runasVTT` restrita às origens da suíte, importação Tools/DM → tokens, Mesa do DM sobre tokens, dano confirmado, Registro e textos flutuantes; testes e smoke do Electron aprovados. |

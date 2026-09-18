@@ -26,3 +26,12 @@ describe("preload da ponte", () => {
     expect(electron.contextBridge.exposeInMainWorld).not.toHaveBeenCalled()
   })
 })
+
+describe("erros da ponte", () => {
+  it("entrega ao site só o motivo, sem o prefixo do Electron", async () => {
+    const { cleanRemoteError } = await import("../src/preload/bridge")
+    expect(cleanRemoteError(new Error("Error invoking remote method 'bridge:import-characters': Error: Abra uma cena no RunasVTT antes de importar.")).message)
+      .toBe("Abra uma cena no RunasVTT antes de importar.")
+    expect(cleanRemoteError(new Error("Outro erro")).message).toBe("Outro erro")
+  })
+})

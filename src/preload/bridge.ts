@@ -18,15 +18,28 @@ export const BRIDGE_CHANNELS = {
 } as const
 const PROTOCOL = 1
 
+/**
+ * O Electron embrulha erros do processo principal como
+ * "Error invoking remote method 'canal': Error: motivo". O site recebe só o motivo.
+ */
+export function cleanRemoteError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error)
+  return new Error(message.replace(/^Error invoking remote method '[^']+': (?:[A-Za-z]*Error: )?/, ""))
+}
+
+function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
+  return ipcRenderer.invoke(channel, ...args).catch((error: unknown) => { throw cleanRemoteError(error) })
+}
+
 const pageOrigin = (globalThis as { location?: { origin: string } }).location?.origin ?? ""
 
 if (BRIDGE_ORIGINS.includes(pageOrigin)) {
   contextBridge.exposeInMainWorld("runasVTT", {
     protocol: PROTOCOL,
-    importCharacters: (items: unknown) => ipcRenderer.invoke(BRIDGE_CHANNELS.importCharacters, items),
-    getTokens: () => ipcRenderer.invoke(BRIDGE_CHANNELS.getTokens),
-    updateTokenCharacter: (tokenId: unknown, envelope: unknown, summary: unknown) => ipcRenderer.invoke(BRIDGE_CHANNELS.updateTokenCharacter, tokenId, envelope, summary),
-    postLog: (entry: unknown) => ipcRenderer.invoke(BRIDGE_CHANNELS.postLog, entry),
+    importCharacters: (items: unknown) => invoke(BRIDGE_CHANNELS.importCharacters, items),
+    getTokens: () => invoke(BRIDGE_CHANNELS.getTokens),
+    updateTokenCharacter: (tokenId: unknown, envelope: unknown, summary: unknown) => invoke(BRIDGE_CHANNELS.updateTokenCharacter, tokenId, envelope, summary),
+    postLog: (entry: unknown) => invoke(BRIDGE_CHANNELS.postLog, entry),
     onTokensChanged: (listener: () => void) => {
       const handler = () => listener()
       ipcRenderer.on(BRIDGE_CHANNELS.tokensChanged, handler)
