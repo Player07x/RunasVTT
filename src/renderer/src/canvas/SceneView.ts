@@ -49,7 +49,8 @@ interface Item {
 type Interaction =
   | { type: "pan"; startGlobal: Point; startPosition: Point }
   // A seleção fica pendente durante o arrasto. Assim, clicar e segurar um
-  // token não abre a ficha: a ponte só recebe a seleção no pointerup.
+  // token não abre a ficha: a ponte só recebe a seleção no pointerup de um
+  // clique sem movimento.
   | { type: "drag"; origin: Point; moved: boolean; entries: { id: string; start: Point }[]; selection: Set<string> }
   | { type: "box"; start: Point }
   | { type: "ruler"; start: Point }
@@ -83,7 +84,9 @@ export class SceneView {
   private readonly overlay = new Graphics()
   private readonly rulerLabel = new Text({ text: "", style: { fill: 0xf3ece8, fontSize: 15, fontFamily: "Segoe UI", fontWeight: "600", stroke: { color: 0x080707, width: 4 } } })
   private readonly items = new Map<string, Item>()
+  private readonly images = new Map<string, Promise<HTMLImageElement>>()
   private readonly textures = new Map<string, Promise<Texture>>()
+  private readonly tokenTextures = new Map<string, Promise<Texture>>()
   private scene: WorldDocument<SceneData> | null = null
   private sceneKey = ""
   private gridKey = ""
@@ -382,25 +385,28 @@ export class SceneView {
     const color = DISPOSITION_COLORS[data.disposition]
     const body = new Container()
     body.angle = data.rotation
-    // A moldura acompanha a área ocupada pelo token. O retrato pode ser
-    // circular ou livre, mas a borda não cria um anel maior em volta dele.
     const corner = Math.max(4, size * 0.1)
-    body.addChild(new Graphics().roundRect(-radius, -radius, size, size, corner).fill({ color: 0x171314 }).stroke({ color, width: Math.max(2, size * 0.035) }))
+    const addFallback = () => {
+      if (body.children.length) return
+      body.addChild(new Graphics().roundRect(-radius, -radius, size, size, corner).fill({ color: 0x171314 }).stroke({ color, width: Math.max(2, size * 0.035) }))
+      const initial = new Text({ text: (data.name.trim()[0] ?? "?").toUpperCase(), style: { fill: color, fontSize: size * 0.42, fontFamily: "Segoe UI", fontWeight: "700" } })
+      initial.anchor.set(0.5)
+      body.addChild(initial)
+    }
     if (data.image) {
       const path = data.image
-      void this.texture(path).then((texture) => {
+      // A textura já contém apenas a silhueta opaca da imagem e a moldura
+      // colorida dilatada a partir do canal alpha. Não há fundo quadrado por
+      // trás: PNG/WebP transparente continua transparente no canvas.
+      void this.tokenTexture(path, color).then((texture) => {
         if (this.destroyed || display.destroyed) return
         const sprite = new Sprite(texture)
         sprite.anchor.set(0.5)
         const scale = Math.min(size / texture.width, size / texture.height)
         sprite.scale.set(scale)
         body.addChild(sprite)
-      }).catch(() => undefined)
-    } else {
-      const initial = new Text({ text: (data.name.trim()[0] ?? "?").toUpperCase(), style: { fill: color, fontSize: size * 0.42, fontFamily: "Segoe UI", fontWeight: "700" } })
-      initial.anchor.set(0.5)
-      body.addChild(initial)
-    }
+      }).catch(() => addFallback())
+    } else addFallback()
     display.addChild(body)
 
     const barWidth = size * 0.9
@@ -500,18 +506,88 @@ export class SceneView {
   private texture(path: string): Promise<Texture> {
     let pending = this.textures.get(path)
     if (!pending) {
+      pending = this.image(path).then((image) => Texture.from(image))
+      this.textures.set(path, pending)
+      pending.catch(() => this.textures.delete(path))
+    }
+    return pending
+  }
+
+  private image(path: string): Promise<HTMLImageElement> {
+    let pending = this.images.get(path)
+    if (!pending) {
       pending = (async () => {
         const image = new Image()
         // Sem isto o WebGL recusa a imagem de `vtt-asset://` (outra origem).
         image.crossOrigin = "anonymous"
         image.src = resolveAssetUrl(path)
         await image.decode()
-        return Texture.from(image)
+        return image
       })()
-      this.textures.set(path, pending)
-      pending.catch(() => this.textures.delete(path))
+      this.images.set(path, pending)
+      pending.catch(() => this.images.delete(path))
     }
     return pending
+  }
+
+  private tokenTexture(path: string, color: number): Promise<Texture> {
+    const key = `${path}|${color}`
+    let pending = this.tokenTextures.get(key)
+    if (!pending) {
+      pending = this.image(path).then((image) => this.makeSilhouetteTexture(image, color))
+      this.tokenTextures.set(key, pending)
+      pending.catch(() => this.tokenTextures.delete(key))
+    }
+    return pending
+  }
+
+  /** Cria uma textura transparente com uma borda obtida do canal alpha. */
+  private makeSilhouetteTexture(image: HTMLImageElement, color: number): Texture {
+    const naturalWidth = image.naturalWidth || image.width
+    const naturalHeight = image.naturalHeight || image.height
+    if (!naturalWidth || !naturalHeight) throw new Error("A imagem do token não tem dimensões.")
+
+    // Limita o trabalho de imagens enormes sem mudar a proporção exibida.
+    const sourceScale = Math.min(1, 1024 / Math.max(naturalWidth, naturalHeight))
+    const width = Math.max(1, Math.round(naturalWidth * sourceScale))
+    const height = Math.max(1, Math.round(naturalHeight * sourceScale))
+    const border = Math.max(2, Math.round(Math.min(width, height) * 0.04))
+    const padding = border + 1
+
+    const source = document.createElement("canvas")
+    source.width = width
+    source.height = height
+    const sourceContext = source.getContext("2d")
+    if (!sourceContext) throw new Error("Não foi possível preparar a imagem do token.")
+    sourceContext.drawImage(image, 0, 0, width, height)
+
+    // A união de cópias deslocadas é uma dilatação do alpha. Ao colorir essa
+    // máscara e desenhar a imagem original por cima, a moldura acompanha a
+    // silhueta, inclusive nos recortes transparentes do retrato.
+    const mask = document.createElement("canvas")
+    mask.width = width + padding * 2
+    mask.height = height + padding * 2
+    const maskContext = mask.getContext("2d")
+    if (!maskContext) throw new Error("Não foi possível preparar a moldura do token.")
+    for (let y = -border; y <= border; y += 1) {
+      for (let x = -border; x <= border; x += 1) {
+        if (x * x + y * y > border * border) continue
+        maskContext.drawImage(source, padding + x, padding + y)
+      }
+    }
+
+    const output = document.createElement("canvas")
+    output.width = mask.width
+    output.height = mask.height
+    const outputContext = output.getContext("2d")
+    if (!outputContext) throw new Error("Não foi possível renderizar a moldura do token.")
+    outputContext.drawImage(mask, 0, 0)
+    outputContext.globalCompositeOperation = "source-in"
+    outputContext.fillStyle = `#${color.toString(16).padStart(6, "0")}`
+    outputContext.fillRect(0, 0, output.width, output.height)
+    outputContext.globalCompositeOperation = "source-over"
+    outputContext.drawImage(source, padding, padding)
+    return Texture.from(output)
   }
 
   private refreshSelection(): void {
@@ -731,7 +807,9 @@ export class SceneView {
         this.handlers.onPut({ id: item.id, type: item.kind, parentId: item.document.parentId, data: { ...data, ...position } })
       }
       this.selection = new Set([...interaction.selection].filter((id) => this.items.has(id)))
-      this.emitSelection()
+      // Arrastar reposiciona e destaca o token localmente, mas não publica a
+      // seleção. A ficha só deve abrir no clique sem movimento, ao soltar.
+      this.refreshSelection()
       return
     }
     if (interaction.type === "box") {

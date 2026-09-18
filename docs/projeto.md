@@ -377,8 +377,8 @@ Atualizado em 2026-09-18.
 - A projeção é construída em módulo puro e testado: só a cena transmitida e objetos visíveis; tokens sem `actor`; notas sem `url`; nenhum Registro; barras configuráveis (padrão só aliados). Assets só são servidos quando referenciados pela projeção atual.
 - O painel do mestre liga/desliga, mostra link LAN, QR code local e espectadores, permite escolher cena, seguir/desligar a câmera do mestre, puxar a câmera e escolher barras. O link público opcional baixa e verifica o `cloudflared` oficial apenas depois de confirmação e abre um Quick Tunnel.
 - A página suporta câmera seguindo o mestre (centro e zoom) ou câmera local independente. Mensagens de clientes são ignoradas, exceto `ping`; desligar a transmissão ou fechar o mundo encerra as conexões.
-- A moldura dos tokens acompanha a área ocupada pelo token, em vez de desenhar um círculo externo. A seleção pendente só é publicada ao soltar o ponteiro; assim a ficha abre no clique liberado, não ao segurar para mover.
-- **Verificação:** 59 testes (incluindo projeção e servidor), `npm run typecheck`, `npm test`, `npm run smoke` e página real aberta no navegador externo com canvas renderizado, WebSocket conectado e nenhum erro de console.
+- A imagem do token preserva o alpha de PNG/WebP e recebe a borda da disposição como uma dilatação da silhueta, em vez de um fundo ou quadrado colorido. Um clique sem movimento publica a seleção no `pointerup`; arrastar e soltar apenas move o token e não abre a ficha.
+- **Verificação:** 61 testes (incluindo checksum do release, projeção e servidor), `npm run typecheck`, `npm test`, `npm run smoke` e página real aberta no navegador externo com canvas renderizado, WebSocket conectado e nenhum erro de console.
 
 **Próximo passo:** Fase 6, paredes, portas, visão, luz e névoa. A projeção da Fase 5 já deixa o ponto de aplicação da névoa isolado para essa fase.
 
@@ -396,7 +396,7 @@ Atualizado em 2026-09-18.
 - **Cloudflare Access não está ativo em `runas-dm.pages.dev`** (a página responde 200 sem login), apesar de a documentação da suíte exigir. O risco é baixo (dados locais, API com token), mas a configuração deve ser conferida no painel da Cloudflare.
 
 ### Pendências da Fase 5
-- O link público depende do primeiro download do `cloudflared`, que é opcional, pede confirmação no painel e exige conectividade para baixar/verificar o release oficial. A rede local não depende dele.
+- O link público depende do primeiro download do `cloudflared`, que é opcional, pede confirmação no painel e exige conectividade para baixar/verificar o release oficial. O app consulta o release oficial da Cloudflare no GitHub, lê o checksum publicado e aceita o redirecionamento para `release-assets.githubusercontent.com`; a rede local não depende dele.
 
 ### Limitações conhecidas da Fase 2 (para fases futuras)
 - Sem desfazer/refazer.
@@ -437,6 +437,7 @@ Atualizado em 2026-09-18.
 | 2026-09-18 | Vista dos Jogadores sem dependência do Discord (transmissão de vídeo bloqueada no Brasil): projeto.md e ADR 0005 listam TV/monitor, Meet, Teams, Zoom, Jitsi e OBS, com requisitos de captura da janela. |
 | 2026-09-18 | Fase 4 concluída: token da ficha (Character v21), editor de token no DM e no Tools, desenho compartilhado em `@runas/vtt-bridge` e tamanho do token no VTT; suíte publicada e teste de ponta a ponta aprovado. |
 | 2026-09-18 | Fase 5 concluída: servidor HTTP/WebSocket somente leitura, projeção segura, página `player.html` com SceneView não editável, link LAN com QR, câmera sincronizada, janela local pela mesma URL e túnel Cloudflare opcional verificado; typecheck, testes, smoke e navegador externo aprovados. |
-| 2026-09-18 | Ajustes finais da Fase 5: moldura dos tokens passou a se ajustar à área ocupada; a seleção é publicada no `pointerup`, fazendo a ficha abrir apenas ao clicar e soltar. |
+| 2026-09-18 | Ajustes finais da Fase 5: moldura dos tokens passou a se ajustar à área ocupada; a seleção de um clique sem movimento é publicada no `pointerup`, fazendo a ficha abrir apenas ao clicar. |
+| 2026-09-18 | Correções da Vista dos Jogadores: Quick Tunnel usa os metadados e o checksum do release oficial atual do `cloudflared`; imagens transparentes mantêm o alpha e a borda colorida acompanha a silhueta; arrastar um token não publica seleção nem abre ficha. |
 | 2026-09-18 | Revisão da Fase 3: corrigidos o arquivo do core que faltava no commit da suíte, as mensagens de erro da ponte, o "Iniciar encontro" dentro do VTT e o espaçamento dos tokens importados; suíte publicada; teste de ponta a ponta contra os sites reais aprovado. |
 | 2026-09-18 | Fase 3 concluída: ponte `runasVTT` restrita às origens da suíte, importação Tools/DM → tokens, Mesa do DM sobre tokens, dano confirmado, Registro e textos flutuantes; testes e smoke do Electron aprovados. |
