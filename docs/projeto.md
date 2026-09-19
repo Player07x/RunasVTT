@@ -262,6 +262,7 @@ Registradas em 2026-09-18.
 |0013|Áudio decidido no processo principal e tocado, sincronizado, na mesa e na página dos jogadores|Os jogadores assistem de casa: o áudio precisa chegar até eles|
 |0015|Backup: `.zip` com cópia consistente do banco (`VACUUM INTO`) e importação validada; snapshots do banco por sessão, fora da pasta do mundo|Desfazer uma sessão e levar o mundo para outra máquina com segurança|
 |0017|Espectadores movem tokens "Jogador"; o VTT valida (cena, categoria, travado, mapa, paredes) e grava pelo mesmo caminho da mesa|Pedido do usuário; os jogadores podem mover os próprios personagens sem contas|
+|0018|Tag `v*` gera o instalador no GitHub Actions e o publica numa Release; a tag precisa bater com o `package.json`|Pedido do usuário; o CI também atualiza a cópia inicial dos sites a cada versão|
 |0014|Regiões com gatilhos (teleporte, texto) no processo principal e terreno difícil na régua; jogadores só recebem forma e terreno das regiões visíveis|Os gatilhos valem para qualquer movimento, inclusive o feito pela ponte com os sites|
 
 Os ADRs detalhados ficam em [`docs/adr/`](adr/).
@@ -510,6 +511,13 @@ Atualizado em 2026-09-18.
   * um mundo e uma cena foram criados;
   * a cópia dos sites veio junto (Tools 36, DM 30 e Book 17 arquivos);
   * a Vista dos Jogadores serviu `player.html` e os três arquivos de script e estilo de dentro do `asar`, todos com 200.
+
+**Releases no GitHub (ADR 0018)**
+
+* `.github/workflows/release.yml`: um push de tag `v*` roda, num runner Windows, typecheck, testes, `seed:sites`, smoke e electron-builder. Depois publica a Release com o `.exe`, o `SHA256SUMS.txt` e notas geradas dos commits.
+* Para publicar: `npm version patch` (ou `minor`/`major`) e `git push --follow-tags` na `main`. O workflow recusa a tag que não bate com o `package.json`. Tags com hífen viram pré-release.
+* Rodar o workflow manualmente pela aba Actions gera o instalador só como artefato, sem Release.
+* O repositório é privado: as Releases só aparecem para quem tem acesso a ele.
 * **Sem assinatura:** o SmartScreen avisa na primeira execução.
 
 **Jogadores movem tokens "Jogador" (ADR 0017)**
@@ -576,6 +584,7 @@ Atualizado em 2026-09-18.
 
 |Data|Mudança|
 |-|-|
+|2026-09-19|Releases no GitHub (M19 / ADR 0018): workflow `release.yml` gera o instalador Windows a cada tag `v*` e o publica numa Release com SHA-256; `npm version` cria o commit e a tag.|
 |2026-09-18|Espectadores movem tokens "Jogador" (M18 / ADR 0017): nova categoria, pedido validado no VTT, opção no painel Jogadores; `lineBlocked` corrigido para as juntas entre paredes.|
 |2026-09-18|Instalador Windows (M17 / ADR 0016): `npm run dist` com electron-builder (NSIS por usuário), ícone, cópia inicial dos sites no pacote e `userData` fixo em `%APPDATA%\runas-vtt`.|
 |2026-09-18|Fase 9 concluída: exportar e importar o mundo em `.zip` (ZIP próprio, validação de hash e de caminhos) e snapshots do banco por sessão, manuais e antes de restaurar (ADR 0015). Plano vigente concluído.|
