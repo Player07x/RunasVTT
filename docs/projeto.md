@@ -218,6 +218,7 @@ Registradas em 2026-09-18.
 |M14|Remover a senha do Runas DM: Campanhas e Wiki sem login, token só para o backup|Aplicado no runas-suite (`e226df6`)|
 |M15|Runas Book: usar apenas o token, sem senha|Aplicado no runas-suite (`9e52973`)|
 |M16|A Vista dos Jogadores é transmitida por uma **página web**, e não por captura de janela (a transmissão de vídeo do Discord está bloqueada no Brasil)|ADR 0009; Fase 5 passa a ter servidor somente leitura (revisa os ADRs 0001 e 0005)|
+|M18|Espectadores podem **mover tokens "Jogador"** (nova categoria)|ADR 0017: revisa 0001 e 0009; o VTT valida cada pedido (Jogador, mapa, paredes)|
 |M17|Gerar um **instalador `.exe`** (revisa M7)|ADR 0016: electron-builder com NSIS; dados em `%APPDATA%\runas-vtt` tanto no instalado quanto em desenvolvimento|
 
 \---
@@ -260,6 +261,7 @@ Registradas em 2026-09-18.
 |0012|Visão, luz e névoa calculadas no processo principal; a projeção só envia o que os aliados enxergam|A página dos jogadores é pública na rede: esconder no cliente vazaria a cena|
 |0013|Áudio decidido no processo principal e tocado, sincronizado, na mesa e na página dos jogadores|Os jogadores assistem de casa: o áudio precisa chegar até eles|
 |0015|Backup: `.zip` com cópia consistente do banco (`VACUUM INTO`) e importação validada; snapshots do banco por sessão, fora da pasta do mundo|Desfazer uma sessão e levar o mundo para outra máquina com segurança|
+|0017|Espectadores movem tokens "Jogador"; o VTT valida (cena, categoria, travado, mapa, paredes) e grava pelo mesmo caminho da mesa|Pedido do usuário; os jogadores podem mover os próprios personagens sem contas|
 |0014|Regiões com gatilhos (teleporte, texto) no processo principal e terreno difícil na régua; jogadores só recebem forma e terreno das regiões visíveis|Os gatilhos valem para qualquer movimento, inclusive o feito pela ponte com os sites|
 
 Os ADRs detalhados ficam em [`docs/adr/`](adr/).
@@ -510,6 +512,22 @@ Atualizado em 2026-09-18.
   * a Vista dos Jogadores serviu `player.html` e os três arquivos de script e estilo de dentro do `asar`, todos com 200.
 * **Sem assinatura:** o SmartScreen avisa na primeira execução.
 
+**Jogadores movem tokens "Jogador" (ADR 0017)**
+
+* **Nova categoria "Jogador"** (borda verde): conta como aliada para visão, sons do mapa, regiões e barras. As fichas do Runas Tools entram como Jogador.
+* **Na página dos jogadores,** tokens Jogador ficam arrastáveis, com régua durante o arraste. O VTT confere cada pedido e recusa:
+  * token que não é Jogador, está oculto ou travado;
+  * destino fora do mapa;
+  * caminho que toca parede ou porta fechada, inclusive na junta de duas paredes.
+
+  O destino é encaixado na grade pelo próprio VTT. Na recusa, o token volta ao lugar e o espectador vê o motivo.
+* **No painel Jogadores:** "Jogadores podem mover os tokens marcados como Jogador" (ligado por padrão).
+* **Proteções:** no máximo 8 pedidos por segundo por espectador, mensagens de até 16 KB, e os movimentos aceitos passam pelo mesmo caminho da mesa (visão, regiões, áudio e sites).
+* **Verificação:**
+  * 126 testes;
+  * no Electron real, pela página dos jogadores: Jogador movido e encaixado, Hostil não arrastável, parede bloqueando com aviso, passagem pela porta aberta e nada se move com a opção desligada.
+* **Bug achado e corrigido:** a checagem de parede deixava passar exatamente pela junta de duas paredes.
+
 **Plano vigente concluído (Fases 0 a 9).** Próximos passos dependem de novas decisões do usuário (ver Pendências).
 
 \---
@@ -558,6 +576,7 @@ Atualizado em 2026-09-18.
 
 |Data|Mudança|
 |-|-|
+|2026-09-18|Espectadores movem tokens "Jogador" (M18 / ADR 0017): nova categoria, pedido validado no VTT, opção no painel Jogadores; `lineBlocked` corrigido para as juntas entre paredes.|
 |2026-09-18|Instalador Windows (M17 / ADR 0016): `npm run dist` com electron-builder (NSIS por usuário), ícone, cópia inicial dos sites no pacote e `userData` fixo em `%APPDATA%\runas-vtt`.|
 |2026-09-18|Fase 9 concluída: exportar e importar o mundo em `.zip` (ZIP próprio, validação de hash e de caminhos) e snapshots do banco por sessão, manuais e antes de restaurar (ADR 0015). Plano vigente concluído.|
 |2026-09-18|Fase 8 concluída: regiões (retângulo ou elipse) com teleporte entre cenas, texto ao entrar ("só uma vez") e terreno difícil na régua; gatilhos no processo principal (ADR 0014).|

@@ -9,6 +9,7 @@ Antes de alterar qualquer parte deste projeto, leia integralmente:
 
 - O RunasVTT **não copia regras da Runas Suite** e não depende do `@runas/core`. Fichas são envelopes opacos com o resumo enviado pelo site (ADR 0003).
 - Somente o mestre usa o VTT. Não crie servidor para jogadores, contas nem permissões sem um novo ADR (ADR 0001).
+- A Vista dos Jogadores só aceita do espectador o pedido de mover um token "Jogador", e o VTT valida tudo (cena, categoria, travado, mapa, paredes) antes de gravar (ADR 0017). Qualquer outro pedido de espectador exige um novo ADR.
 - Todo fluxo de mesa funciona **sem internet**.
 - A interface do VTT roda com `contextIsolation`, `sandbox` e sem `nodeIntegration`. Acesso a disco e banco só pelo processo principal, via IPC tipado em `src/shared/ipc.ts`.
 - A ponte `window.runasVTT` só pode ser exposta às origens da Runas Suite. Sites externos nunca a recebem.

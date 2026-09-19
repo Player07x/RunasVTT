@@ -285,6 +285,7 @@ function registerPlayerIpc(transmission: PlayerTransmission, userData: string): 
     audioService?.sceneChanged()
   })
   ipcMain.handle(IPC.playerSetAudio, (_event, enabled: unknown) => transmission.setAudioEnabled(Boolean(enabled)))
+  ipcMain.handle(IPC.playerSetMoves, (_event, enabled: unknown) => transmission.setMovesEnabled(Boolean(enabled)))
   ipcMain.handle(IPC.playerRuler, (_event, ruler: unknown) => transmission.setRuler(ruler))
   ipcMain.handle(IPC.playerPullCamera, () => transmission.pullCamera())
   ipcMain.handle(IPC.playerSetBars, (_event, bars: unknown) => {
@@ -402,6 +403,8 @@ void app.whenReady().then(() => {
     for (const current of BrowserWindow.getAllWindows()) current.webContents.send(IPC.playerStateChanged, state)
   }, visionService)
   const transmission = playerTransmission
+  // Movimentos dos espectadores passam pelo mesmo caminho das mudanças da mesa (visão, regiões, áudio, sites).
+  transmission.setCommit(broadcast)
   audioService = new AudioService(() => store.openWorld?.database ?? null, () => transmission.audibleSceneId, (state) => {
     for (const current of BrowserWindow.getAllWindows()) current.webContents.send(IPC.audioStateChanged, state)
     transmission.setAudio(state)

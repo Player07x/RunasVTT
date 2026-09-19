@@ -1,6 +1,6 @@
 # ADR 0001 — Somente o mestre usa o RunasVTT
 
-- **Status:** aceita (2026-09-18) · revisada pelo ADR 0009: existe um servidor de transmissão **somente leitura** para a Vista dos Jogadores; os jogadores continuam sem operar a mesa
+- **Status:** aceita (2026-09-18) · revisada pelo ADR 0009 (servidor de transmissão para a Vista dos Jogadores) e pelo ADR 0017 (espectadores podem mover tokens "Jogador", com validação no VTT; o resto da mesa continua só com o mestre)
 
 ## Contexto
 O FoundryVTT é um servidor multiusuário: cada jogador entra pelo navegador, com papéis e permissões por documento. O usuário definiu que os jogadores acompanham a sessão pela tela compartilhada.

@@ -8,6 +8,9 @@ import { PlayerServer, type PlayerWireMessage } from "./player-server"
 import type { WorldStore } from "./world-store"
 import type { VisionService } from "./vision-service"
 import type { AudioState } from "../shared/audio"
+import type { DocumentChange as Change } from "../shared/ipc"
+import { putDocument } from "./world-documents"
+import { normalizeMoveRequest, validatePlayerMove } from "./player-moves"
 
 const DEFAULT_PORT = 30000
 
@@ -41,6 +44,10 @@ export class PlayerTransmission {
   private table: TableReport = { sceneId: null, selection: [], center: null, zoom: null }
   private ruler: PlayerRuler | null = null
   private audioEnabled = true
+  /** Espectadores podem mover tokens "Jogador" (ADR 0017). */
+  private movesEnabled = true
+  /** Grava e transmite uma mudança feita por um espectador, como qualquer outra. */
+  private commit: ((change: Change) => void) | null = null
   private audio: AudioState = { now: 0, sounds: [] }
   private bars: PlayerBarVisibility = "friendly"
   private lastProjection: PlayerProjection = { scene: null, children: [], assets: [], vision: null, regions: [] }
@@ -55,12 +62,13 @@ export class PlayerTransmission {
       allowedAssets: () => [...this.lastProjection.assets, ...(this.audioEnabled ? this.audio.sounds.map((sound) => sound.audio) : [])],
       snapshot: () => this.snapshotMessage(),
       onSpectators: (spectators) => { this.emit(spectators) },
+      onClientMessage: (message) => this.handleClientMessage(message),
     })
   }
 
   state(): PlayerState {
     const localUrl = this.enabled && this.key ? `http://${localAddress()}:${this.port}/?k=${this.key}` : null
-    return { enabled: this.enabled, port: this.port, key: this.key, localUrl, publicUrl: this.publicUrl, sceneId: this.sceneId, audio: this.audioEnabled, bars: this.bars, spectators: this.server.spectatorCount }
+    return { enabled: this.enabled, port: this.port, key: this.key, localUrl, publicUrl: this.publicUrl, sceneId: this.sceneId, audio: this.audioEnabled, moves: this.movesEnabled, bars: this.bars, spectators: this.server.spectatorCount }
   }
 
   /** URL usada pela BrowserWindow local; a página é a mesma dos espectadores. */
@@ -199,6 +207,30 @@ export class PlayerTransmission {
     if (this.enabled && this.audioEnabled) this.server.publish({ type: "audio", audio: state })
   }
 
+  setCommit(commit: (change: Change) => void): void {
+    this.commit = commit
+  }
+
+  setMovesEnabled(enabled: boolean): void {
+    this.movesEnabled = enabled
+    if (this.enabled) this.server.publish({ type: "moves", moves: enabled })
+    this.emit()
+  }
+
+  /** Único pedido que um espectador pode fazer: mover um token "Jogador". */
+  handleClientMessage(value: unknown): PlayerWireMessage | null {
+    const request = normalizeMoveRequest(value)
+    if (!request) return null
+    const reject = (reason: string): PlayerWireMessage => ({ type: "move-result", tokenId: request.tokenId, ok: false, reason })
+    if (!this.enabled || !this.movesEnabled) return reject("O mestre não está permitindo mover tokens agora.")
+    const database = this.store.openWorld?.database
+    if (!database || !this.commit) return reject("Nenhum mundo aberto.")
+    const result = validatePlayerMove(database, this.lastProjection.scene?.id ?? null, request)
+    if (!result.ok) return reject(result.reason)
+    this.commit(putDocument(database, { id: result.token.id, type: "token", parentId: result.token.parentId, data: result.token.data }).change)
+    return { type: "move-result", tokenId: request.tokenId, ok: true }
+  }
+
   setAudioEnabled(enabled: boolean): void {
     this.audioEnabled = enabled
     if (this.enabled) this.server.publish({ type: "audio", audio: enabled ? this.audio : null })
@@ -217,7 +249,7 @@ export class PlayerTransmission {
   }
 
   private snapshotMessage(): PlayerWireMessage {
-    return { type: "snapshot", projection: this.lastProjection, ruler: this.ruler, audio: this.audioEnabled ? { ...this.audio, now: Date.now() } : null }
+    return { type: "snapshot", projection: this.lastProjection, ruler: this.ruler, audio: this.audioEnabled ? { ...this.audio, now: Date.now() } : null, moves: this.movesEnabled }
   }
 
   private emit(spectators = this.server.spectatorCount): void {

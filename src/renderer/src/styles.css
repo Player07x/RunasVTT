@@ -302,3 +302,4 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .snapshot-list li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 .snapshot-list li > div { display: grid; flex: 1; gap: 2px; }
 .snapshot-list small { color: var(--muted); font-size: 12px; }
+.player-notice { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--panel) 94%, transparent); color: var(--gold); box-shadow: 0 8px 24px rgb(0 0 0 / 35%); }

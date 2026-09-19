@@ -5,7 +5,7 @@ import { useSettings } from "../settings"
 import { AudioLines, BrickWall, Circle, SquareDashed, DoorClosed, DoorOpen, Eye, EyeOff, ImagePlus, Lightbulb, Link2, Lock, MapPin, MousePointer2, Pencil, Ruler, ScanEye, Square, Trash2, Type, UserRound, Waves } from "lucide-react"
 import type { DocumentInput } from "../../../shared/ipc"
 import { snapTokenCenter } from "../../../shared/grid"
-import { BAR_COLORS, TOKEN_DISPOSITIONS, WALL_KINDS, type DrawingData, type DrawingShape, type LightData, type NoteData, type SceneData, type TileData, type TokenBar, type TokenData, type TokenDisposition, type WallData, type WallKind } from "../../../shared/scene"
+import { BAR_COLORS, isAlly, TOKEN_DISPOSITIONS, WALL_KINDS, type DrawingData, type DrawingShape, type LightData, type NoteData, type SceneData, type TileData, type TokenBar, type TokenData, type TokenDisposition, type WallData, type WallKind } from "../../../shared/scene"
 import { computeVision, renderVision } from "../../../shared/vision"
 import type { SoundData } from "../../../shared/audio"
 import { REGION_SHAPES, REGION_TRIGGERS, type RegionData, type RegionShape, type RegionTrigger } from "../../../shared/region"
@@ -28,7 +28,7 @@ const TOOLS: { id: SceneTool; label: string; action: KeyAction; icon: typeof Rul
 ]
 
 const REGION_SHAPE_LABELS: Record<RegionShape, string> = { rectangle: "Retângulo", ellipse: "Elipse" }
-const REGION_TRIGGER_LABELS: Record<RegionTrigger, string> = { friendly: "Só aliados", any: "Qualquer token" }
+const REGION_TRIGGER_LABELS: Record<RegionTrigger, string> = { friendly: "Só Jogador e Aliado", any: "Qualquer token" }
 
 const WALL_LABELS: Record<WallKind, string> = { wall: "Parede", door: "Porta", secret: "Porta secreta" }
 const WALL_ICONS: Record<WallKind, typeof BrickWall> = { wall: BrickWall, door: DoorClosed, secret: DoorOpen }
@@ -49,7 +49,7 @@ const SHAPES: { id: DrawingShape; label: string; icon: typeof Square }[] = [
   { id: "text", label: "Texto", icon: Type },
 ]
 
-const DISPOSITION_LABELS: Record<TokenDisposition, string> = { friendly: "Aliado", neutral: "Neutro", hostile: "Hostil", secret: "Secreto" }
+const DISPOSITION_LABELS: Record<TokenDisposition, string> = { player: "Jogador", friendly: "Aliado", neutral: "Neutro", hostile: "Hostil", secret: "Secreto" }
 
 /** Lê um arquivo de imagem, importa para o mundo e devolve o caminho e o tamanho natural. */
 export async function importImage(kind: AssetKind, file: File): Promise<{ path: string; width: number; height: number }> {
@@ -339,7 +339,8 @@ function TokenFields({ data, scene, update }: { data: TokenData; scene: WorldDoc
         <Field label="Penumbra (células)"><NumberInput value={data.light.dim} step={1} min={0} onCommit={(dim) => update({ light: { ...data.light, dim: Math.max(0, dim) } })} /></Field>
         <Field label="Cor"><input type="color" value={data.light.color} onChange={(event) => update({ light: { ...data.light, color: event.target.value } })} /></Field>
       </div>
-      {data.disposition !== "friendly" && <small className="hint">Só tokens aliados revelam o mapa. A luz vale para qualquer token visível.</small>}
+      {!isAlly(data.disposition) && <small className="hint">Só tokens Jogador e Aliado revelam o mapa. A luz vale para qualquer token visível.</small>}
+      {data.disposition === "player" && <small className="hint">Jogador: os espectadores podem mover este token pela Vista dos Jogadores (se permitido no painel Jogadores).</small>}
     </div>
     <div className="bars">
       <span className="field-label">Barras</span>

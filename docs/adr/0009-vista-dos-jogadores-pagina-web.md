@@ -2,7 +2,7 @@
 
 - **Status:** aceita (2026-09-18) · implementação na Fase 5
 - **Revisa:** ADR 0001 (passa a existir um servidor, só de leitura) e ADR 0005 (a vista deixa de ser só uma janela local)
-- **Revisada por:** ADR 0010. A câmera dos jogadores não segue mais a do mestre; a régua e os textos de dano passam a ser transmitidos.
+- **Revisada por:** ADR 0010 (a câmera dos jogadores não segue mais a do mestre; a régua e os textos de dano passam a ser transmitidos) e ADR 0017 (espectadores podem mover tokens "Jogador").
 
 ## Contexto
 A transmissão de vídeo do Discord está bloqueada no Brasil, e o usuário prefere que os jogadores assistam por uma **página web**, sem instalar nada e sem depender de um serviço de vídeo. Os jogadores continuam sem interagir com a mesa: só o mestre opera o VTT (ADR 0001).

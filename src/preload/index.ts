@@ -47,6 +47,7 @@ const api: VttApi = {
     pullCamera: () => ipcRenderer.invoke(IPC.playerPullCamera),
     setBars: (bars) => ipcRenderer.invoke(IPC.playerSetBars, bars),
     setAudio: (enabled) => ipcRenderer.invoke(IPC.playerSetAudio, enabled),
+    setMoves: (enabled) => ipcRenderer.invoke(IPC.playerSetMoves, enabled),
     publicLink: () => ipcRenderer.invoke(IPC.playerPublicLink),
     downloadCloudflared: () => ipcRenderer.invoke(IPC.playerDownloadCloudflared),
   },

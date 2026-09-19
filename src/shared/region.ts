@@ -95,7 +95,7 @@ export function regionCenter(region: Shape): Point {
 
 /** Quem dispara a região: aliados, ou qualquer token. */
 export function triggersRegion(region: Pick<RegionData, "trigger">, disposition: string): boolean {
-  return region.trigger === "any" || disposition === "friendly"
+  return region.trigger === "any" || disposition === "player" || disposition === "friendly"
 }
 
 const SAMPLES = 64

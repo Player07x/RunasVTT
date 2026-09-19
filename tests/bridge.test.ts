@@ -67,7 +67,7 @@ describe("importCharacters", () => {
     expect(goblin.actor?.envelope).toEqual(envelope)
     expect((goblin.x - 50) % 100).toBe(0)
     expect(await readFile(resolveAssetFile(dir, goblin.image!)!)).toBeTruthy()
-    expect((database.get(tokenIds[1]!)!.data as TokenData).disposition).toBe("friendly")
+    expect((database.get(tokenIds[1]!)!.data as TokenData).disposition).toBe("player") // ficha do Runas Tools = personagem de jogador
   })
 
   it("usa o tamanho do token enviado pelo site e encaixa pelo tamanho", async () => {
