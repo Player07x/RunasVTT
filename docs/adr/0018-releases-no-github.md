@@ -16,6 +16,6 @@ O instalador só existia na máquina de quem rodava `npm run dist`, e a cópia i
 
 ## Consequências
 - Para publicar uma versão: `npm version patch` e `git push --follow-tags` na `main`.
-- O repositório é privado, então as Releases só aparecem para quem tem acesso a ele. Distribuir para outras pessoas exige tornar o repositório público ou publicar os instaladores em outro repositório público.
+- O repositório passou a ser público (2026-09-19), então qualquer pessoa pode baixar os instaladores. Nada que seja segredo pode entrar no código, nos testes ou nos documentos.
 - A cópia inicial reflete os sites publicados no momento do build da Release.
 - Se um site da suíte estiver fora do ar durante o build, `seed:sites` falha e a Release não é criada. Nesse caso, rode o workflow de novo com "Re-run jobs".

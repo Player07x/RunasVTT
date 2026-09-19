@@ -2,7 +2,7 @@
 
 > Documento vivo. Reúne a proposta, o plano, as decisões, o estado atual e o histórico de mudanças do RunasVTT. Toda mudança de escopo, decisão ou fase concluída deve ser registrada aqui, na seção correspondente e no \[Histórico de mudanças](#12-histórico-de-mudanças).
 
-* **Repositório:** [Player07x/RunasVTT](https://github.com/Player07x/RunasVTT) (privado)
+* **Repositório:** [Player07x/RunasVTT](https://github.com/Player07x/RunasVTT) (público desde 2026-09-19)
 * **Pasta local:** `C:\\Users\\joaoa\\Desktop\\Repositorios\\RunasVTT`
 * **Projeto relacionado:** [Player07x/Runas-Core](https://github.com/Player07x/Runas-Core) (Runas Suite), em `C:\\Users\\joaoa\\Desktop\\Repositorios\\runas-suite`
 * **Última atualização:** 2026-09-18
@@ -517,7 +517,7 @@ Atualizado em 2026-09-18.
 * `.github/workflows/release.yml`: um push de tag `v*` roda, num runner Windows, typecheck, testes, `seed:sites`, smoke e electron-builder. Depois publica a Release com o `.exe`, o `SHA256SUMS.txt` e notas geradas dos commits.
 * Para publicar: `npm version patch` (ou `minor`/`major`) e `git push --follow-tags` na `main`. O workflow recusa a tag que não bate com o `package.json`. Tags com hífen viram pré-release.
 * Rodar o workflow manualmente pela aba Actions gera o instalador só como artefato, sem Release.
-* O repositório é privado: as Releases só aparecem para quem tem acesso a ele.
+* O repositório é público desde 2026-09-19; qualquer pessoa baixa o instalador em [Releases](https://github.com/Player07x/RunasVTT/releases).
 * **Sem assinatura:** o SmartScreen avisa na primeira execução.
 
 **Jogadores movem tokens "Jogador" (ADR 0017)**
@@ -584,6 +584,7 @@ Atualizado em 2026-09-18.
 
 |Data|Mudança|
 |-|-|
+|2026-09-19|Repositório `Player07x/RunasVTT` tornado público (histórico conferido sem segredos) e primeira Release, `v0.2.0`.|
 |2026-09-19|Releases no GitHub (M19 / ADR 0018): workflow `release.yml` gera o instalador Windows a cada tag `v*` e o publica numa Release com SHA-256; `npm version` cria o commit e a tag.|
 |2026-09-18|Espectadores movem tokens "Jogador" (M18 / ADR 0017): nova categoria, pedido validado no VTT, opção no painel Jogadores; `lineBlocked` corrigido para as juntas entre paredes.|
 |2026-09-18|Instalador Windows (M17 / ADR 0016): `npm run dist` com electron-builder (NSIS por usuário), ícone, cópia inicial dos sites no pacote e `userData` fixo em `%APPDATA%\runas-vtt`.|
