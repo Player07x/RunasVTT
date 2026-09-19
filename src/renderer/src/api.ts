@@ -34,7 +34,7 @@ function createBrowserPreviewApi(): VttApi {
   const documents = new Map<string, WorldDocument>()
   const documentListeners = new Set<(change: DocumentChange) => void>()
   const playerListeners = new Set<(value: PlayerState) => void>()
-  const player: PlayerState = { enabled: false, port: 30000, key: null, localUrl: null, publicUrl: null, sceneId: null, audio: true, bars: "friendly", spectators: 0 }
+  const player: PlayerState = { enabled: false, port: 30000, key: null, localUrl: null, publicUrl: null, sceneId: null, audio: true, moves: true, bars: "friendly", spectators: 0 }
   let settings = defaultSettings()
   const settingsListeners = new Set<(value: AppSettings) => void>()
   const emitPlayer = () => playerListeners.forEach((listener) => listener({ ...player }))
@@ -93,6 +93,7 @@ function createBrowserPreviewApi(): VttApi {
       pullCamera: async () => undefined,
       setBars: async (bars) => { player.bars = bars; emitPlayer() },
       setAudio: async (enabled) => { player.audio = enabled; emitPlayer() },
+      setMoves: async (enabled) => { player.moves = enabled; emitPlayer() },
       publicLink: async () => { if (!player.enabled) throw new Error("Ligue a Vista dos Jogadores primeiro."); return player.localUrl ?? "" },
       downloadCloudflared: async () => undefined,
     },

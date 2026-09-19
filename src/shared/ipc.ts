@@ -60,6 +60,7 @@ export const IPC = {
   audioStopAll: "audio:stop-all",
   audioEnded: "audio:ended",
   playerSetAudio: "player:set-audio",
+  playerSetMoves: "player:set-moves",
   worldsExport: "worlds:export",
   worldsImport: "worlds:import",
   snapshotsList: "snapshots:list",
@@ -168,6 +169,8 @@ export interface PlayerState {
   sceneId: string | null
   /** Tocar também o áudio na Vista dos Jogadores. */
   audio: boolean
+  /** Os espectadores podem mover tokens "Jogador". */
+  moves: boolean
   bars: PlayerBarVisibility
   spectators: number
 }
@@ -227,6 +230,7 @@ export interface VttApi {
     pullCamera(): Promise<void>
     setBars(bars: PlayerBarVisibility): Promise<void>
     setAudio(enabled: boolean): Promise<void>
+    setMoves(enabled: boolean): Promise<void>
     publicLink(): Promise<string>
     downloadCloudflared(): Promise<void>
   }

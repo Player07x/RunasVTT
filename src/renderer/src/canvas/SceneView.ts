@@ -36,6 +36,8 @@ export interface SceneViewHandlers {
   onViewChange?(): void
   /** A régua da ferramenta Régua mudou (`null` quando some). Não inclui a régua de arrastar tokens. */
   onRulerChange?(ruler: PlayerRuler | null): void
+  /** Vista dos Jogadores: o espectador soltou um token "Jogador" (o VTT confere e grava). */
+  onMove?(tokenId: string, position: Point): void
 }
 
 export interface SceneViewOptions {
@@ -87,7 +89,7 @@ type Interaction =
   | { type: "region"; start: Point }
   | { type: "wall-end"; id: string; end: 1 | 2; fixed: Point }
 
-const DISPOSITION_COLORS: Record<TokenDisposition, number> = { friendly: 0x82aaa6, neutral: 0xb99b65, hostile: 0xc76561, secret: 0x927f9c }
+const DISPOSITION_COLORS: Record<TokenDisposition, number> = { player: 0x86a47f, friendly: 0x82aaa6, neutral: 0xb99b65, hostile: 0xc76561, secret: 0x927f9c }
 /** Cor do texto flutuante de cada tipo de entrada do Registro. */
 export const FLOAT_COLORS: Record<LogKind, number> = { damage: 0xc76561, test: 0x82aaa6, info: 0xb99b65 }
 const SELECTION_COLOR = 0xf3ece8
@@ -154,6 +156,8 @@ export class SceneView {
   private lastClick = { id: "", at: 0 }
   private readonly removeWheel: () => void
   private destroyed = false
+  /** Vista dos Jogadores: quais tokens o espectador pode arrastar. */
+  private movable: (document: WorldDocument) => boolean = () => false
 
   private constructor(private readonly app: Application, private readonly container: HTMLElement, private readonly handlers: SceneViewHandlers, private readonly options: SceneViewOptions) {
     app.stage.addChild(this.world)
@@ -255,6 +259,26 @@ export class SceneView {
 
   setWallKind(kind: WallKind): void {
     this.wallKind = kind
+  }
+
+  /** Vista dos Jogadores: define quais tokens o espectador pode arrastar. */
+  setMovable(movable: (document: WorldDocument) => boolean): void {
+    this.movable = movable
+    if (!this.options.editable) for (const item of this.items.values()) this.applyMovable(item)
+  }
+
+  /** Devolve o token à posição gravada (movimento recusado pelo VTT). */
+  revertToken(tokenId: string): void {
+    const item = this.items.get(tokenId)
+    if (!item) return
+    const data = item.document.data as { x: number; y: number }
+    item.display.position.set(data.x, data.y)
+  }
+
+  private applyMovable(item: Item): void {
+    const movable = item.kind === "token" && this.movable(item.document)
+    item.display.eventMode = movable ? "static" : "auto"
+    item.display.cursor = movable ? "grab" : "default"
   }
 
   setRegionShape(shape: RegionShape): void {
@@ -510,6 +534,9 @@ export class SceneView {
         built.display.eventMode = "static"
         built.display.cursor = "pointer"
         built.display.on("pointerdown", (event) => this.onItemPointerDown(event, id))
+      } else if (kind === "token") {
+        built.display.on("pointerdown", (event) => this.onItemPointerDown(event, id))
+        this.applyMovable(item)
       }
     }
     this.refreshSelection()
@@ -1068,6 +1095,13 @@ export class SceneView {
   private onItemPointerDown(event: FederatedPointerEvent, id: string): void {
     const item = this.items.get(id)
     if (event.button !== 0 || !item || TOOL_FOR_KIND[item.kind] !== this.tool) return
+    // Espectador: só arrasta tokens "Jogador", e um de cada vez.
+    if (!this.options.editable) {
+      if (!this.movable(item.document)) return
+      event.stopPropagation()
+      this.interaction = { type: "drag", origin: this.world.toLocal(event.global), moved: false, entries: [{ id, start: { x: item.display.x, y: item.display.y } }], selection: new Set() }
+      return
+    }
     if (item.kind === "wall") {
       // Clicar na ponta de uma parede começa outra parede emendada ali, em vez de arrastar esta.
       const wall = item.document.data as WallData
@@ -1243,6 +1277,17 @@ export class SceneView {
     const scene = this.scene
     if (!scene) return
     const point = this.world.toLocal(event.global)
+    if (interaction.type === "drag" && !this.options.editable) {
+      this.clearOverlay()
+      const entry = interaction.entries[0]
+      const item = entry ? this.items.get(entry.id) : null
+      if (!interaction.moved || !item) return
+      const data = item.document.data as TokenData
+      const position = event.altKey ? { x: item.display.x, y: item.display.y } : snapTokenCenter({ x: item.display.x, y: item.display.y }, data.size, scene.data.grid)
+      item.display.position.set(position.x, position.y)
+      this.handlers.onMove?.(item.id, position)
+      return
+    }
     if (interaction.type === "drag") {
       this.clearOverlay()
       if (!interaction.moved) {

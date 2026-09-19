@@ -15,7 +15,7 @@ describe("servidor da Vista dos Jogadores", () => {
     const root = join(tmpdir(), `runas-vtt-player-${Date.now()}`)
     await mkdir(root, { recursive: true })
     await writeFile(join(root, "player.html"), "<h1>player</h1>")
-    const server = new PlayerServer({ staticRoot: root, worldPath: () => null, projection: () => projection, snapshot: () => ({ type: "snapshot", projection, ruler: null, audio: null }), onSpectators: () => undefined })
+    const server = new PlayerServer({ staticRoot: root, worldPath: () => null, projection: () => projection, snapshot: () => ({ type: "snapshot", projection, ruler: null, audio: null, moves: false }), onSpectators: () => undefined })
     servers.push(server)
     await server.start(0, "chave")
     const base = `http://127.0.0.1:${server.addressPort}`
@@ -31,7 +31,7 @@ describe("servidor da Vista dos Jogadores", () => {
     const hash = "a".repeat(64)
     await mkdir(join(world, "assets", "maps"), { recursive: true })
     await writeFile(join(world, "assets", "maps", `${hash}.png`), Buffer.from([1, 2, 3]))
-    const server = new PlayerServer({ staticRoot: root, worldPath: () => world, projection: () => ({ scene: null, children: [], assets: [`maps/${hash}.png`], vision: null, regions: [] }), snapshot: () => ({ type: "snapshot", projection, ruler: null, audio: null }), onSpectators: () => undefined })
+    const server = new PlayerServer({ staticRoot: root, worldPath: () => world, projection: () => ({ scene: null, children: [], assets: [`maps/${hash}.png`], vision: null, regions: [] }), snapshot: () => ({ type: "snapshot", projection, ruler: null, audio: null, moves: false }), onSpectators: () => undefined })
     servers.push(server)
     await server.start(0, "chave")
     const base = `http://127.0.0.1:${server.addressPort}`

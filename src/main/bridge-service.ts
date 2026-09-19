@@ -64,7 +64,8 @@ export async function importCharacters(database: WorldDatabase, worldPath: strin
       ...position,
       size: character.tokenSize,
       image: imagePath,
-      disposition: character.source === "tools" ? "friendly" : "hostile",
+      // Fichas do Runas Tools são personagens de jogadores: podem ser movidas pela Vista dos Jogadores.
+      disposition: character.source === "tools" ? "player" : "hostile",
       bars: barsFrom(character.summary),
       actor: { envelope: character.envelope, source: character.source, updatedAt: Date.now() },
     }

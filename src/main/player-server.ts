@@ -12,6 +12,10 @@ export type { PlayerWireMessage }
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 const MAX_FRAME_BYTES = 1024 * 1024
+/** Mensagens dos espectadores são pequenas (ping e mover). */
+const MAX_CLIENT_FRAME_BYTES = 16 * 1024
+/** Mensagens "mover" aceitas por espectador a cada segundo. */
+const MOVES_PER_SECOND = 8
 const ASSET_KINDS = new Set(["maps", "tokens", "tiles", "audio"])
 
 
@@ -23,12 +27,16 @@ interface PlayerServerOptions {
   allowedAssets?: () => readonly AssetPath[]
   snapshot: () => PlayerWireMessage
   onSpectators(count: number): void
+  /** Mensagem de um espectador (além do ping); a resposta vai só para ele. */
+  onClientMessage?(message: unknown): PlayerWireMessage | null
 }
 
 interface Client {
   socket: Duplex
   buffer: Buffer
   send(message: PlayerWireMessage): void
+  /** Horários das últimas mensagens, para o limite por segundo. */
+  recent: number[]
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -181,6 +189,7 @@ export class PlayerServer {
       socket,
       buffer: Buffer.alloc(0),
       send: (message) => { if (!socket.destroyed) socket.write(textFrame(message)) },
+      recent: [],
     }
     this.clients.add(client)
     this.options.onSpectators(this.clients.size)
@@ -204,7 +213,7 @@ export class PlayerServer {
       let offset = 2
       if (length === 126) { if (client.buffer.length < 4) return; length = client.buffer.readUInt16BE(2); offset = 4 }
       else if (length === 127) { if (client.buffer.length < 10) return; const long = client.buffer.readBigUInt64BE(2); if (long > BigInt(MAX_FRAME_BYTES)) { client.socket.destroy(); return }; length = Number(long); offset = 10 }
-      if (!masked) { client.socket.destroy(); return }
+      if (!masked || length > MAX_CLIENT_FRAME_BYTES) { client.socket.destroy(); return }
       if (client.buffer.length < offset + 4 + length) return
       const mask = client.buffer.subarray(offset, offset + 4)
       offset += 4
@@ -219,8 +228,17 @@ export class PlayerServer {
       if (opcode === 0x9) { client.socket.write(frame(0xA, payload)); continue }
       if (opcode !== 0x1) continue
       try {
-        const message = JSON.parse(payload.toString("utf8")) as { type?: unknown }
-        if (message.type === "ping") client.socket.write(textFrame({ type: "pong" }))
+        const message = JSON.parse(payload.toString("utf8")) as { type?: unknown; tokenId?: unknown }
+        if (message.type === "ping") { client.socket.write(textFrame({ type: "pong" })); continue }
+        const now = Date.now()
+        client.recent = client.recent.filter((at) => now - at < 1000)
+        if (client.recent.length >= MOVES_PER_SECOND) {
+          client.send({ type: "move-result", tokenId: typeof message.tokenId === "string" ? message.tokenId.slice(0, 64) : "", ok: false, reason: "Devagar: muitos movimentos seguidos." })
+          continue
+        }
+        client.recent.push(now)
+        const reply = this.options.onClientMessage?.(message)
+        if (reply) client.send(reply)
       } catch { /* clientes não controlam o estado e mensagens inválidas são ignoradas */ }
     }
   }

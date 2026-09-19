@@ -1,5 +1,5 @@
 import type { Point } from "./grid"
-import type { FogData, LightData, SceneData, TokenData, WallData } from "./scene"
+import { isAlly, type FogData, type LightData, type SceneData, type TokenData, type WallData } from "./scene"
 
 /**
  * Visão, luz e névoa (Fase 6). Código puro, usado pelo processo principal (a
@@ -142,15 +142,28 @@ export function visibilityPolygon(origin: Point, walls: readonly Segment[], widt
   return polygon
 }
 
-/** Alguma parede corta o segmento de `a` até `b`? (Usado pelos sons posicionais.) */
+/**
+ * Alguma parede corta o caminho de `a` até `b`? (Sons posicionais e
+ * movimento dos espectadores.) Tocar a parede em qualquer ponto conta,
+ * inclusive nas pontas e nas juntas entre duas paredes, e chegar em cima
+ * dela também. Só o ponto de partida fica de fora, para um token que já
+ * esteja sobre a linha de uma parede poder sair dela. Andar rente à parede
+ * (paralelo) não é cruzar.
+ */
 export function lineBlocked(a: Point, b: Point, walls: readonly Segment[]): boolean {
-  const cross = (ox: number, oy: number, px: number, py: number, qx: number, qy: number) => (px - ox) * (qy - oy) - (py - oy) * (qx - ox)
+  const rx = b.x - a.x
+  const ry = b.y - a.y
+  const tolerance = 1e-9
   for (const wall of walls) {
-    const d1 = cross(wall.ax, wall.ay, wall.bx, wall.by, a.x, a.y)
-    const d2 = cross(wall.ax, wall.ay, wall.bx, wall.by, b.x, b.y)
-    const d3 = cross(a.x, a.y, b.x, b.y, wall.ax, wall.ay)
-    const d4 = cross(a.x, a.y, b.x, b.y, wall.bx, wall.by)
-    if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true
+    const sx = wall.bx - wall.ax
+    const sy = wall.by - wall.ay
+    const denominator = rx * sy - ry * sx
+    if (Math.abs(denominator) < tolerance) continue
+    const qx = wall.ax - a.x
+    const qy = wall.ay - a.y
+    const along = (qx * sy - qy * sx) / denominator
+    const onWall = (qx * ry - qy * rx) / denominator
+    if (along > tolerance && along <= 1 + tolerance && onWall >= -tolerance && onWall <= 1 + tolerance) return true
   }
   return false
 }
@@ -170,7 +183,7 @@ export function pointInPolygon(point: Point, polygon: Polygon): boolean {
 
 /** Tokens que revelam o mapa aos jogadores: aliados visíveis com visão. */
 export function isViewer(token: TokenData): boolean {
-  return token.disposition === "friendly" && token.vision.enabled && !token.hidden
+  return isAlly(token.disposition) && token.vision.enabled && !token.hidden
 }
 
 /** Calcula linhas de visão e áreas iluminadas da cena. */

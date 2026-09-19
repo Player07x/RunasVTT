@@ -89,8 +89,16 @@ export interface FogData {
   bits: string
 }
 
-export const TOKEN_DISPOSITIONS = ["friendly", "neutral", "hostile", "secret"] as const
+export const TOKEN_DISPOSITIONS = ["player", "friendly", "neutral", "hostile", "secret"] as const
 export type TokenDisposition = (typeof TOKEN_DISPOSITIONS)[number]
+
+/**
+ * Aliados: tokens "Jogador" (que os espectadores podem mover) e "Aliado".
+ * Os dois revelam o mapa, ouvem sons do mapa e disparam regiões.
+ */
+export function isAlly(disposition: TokenDisposition): boolean {
+  return disposition === "player" || disposition === "friendly"
+}
 
 export interface TokenBar {
   label: string

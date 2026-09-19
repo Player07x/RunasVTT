@@ -60,6 +60,10 @@ export function PlayerView() {
   const [blocked, setBlocked] = useState(false)
   const [volume, setVolume] = useState(readVolume)
   const [playingCount, setPlayingCount] = useState(0)
+  const socket = useRef<WebSocket | null>(null)
+  const [moves, setMoves] = useState(false)
+  const [notice, setNotice] = useState("")
+  const pendingRejects = useRef<{ tokenId: string; reason: string }[]>([])
 
   useEffect(() => {
     const key = new URLSearchParams(location.search).get("k")
@@ -68,13 +72,16 @@ export function PlayerView() {
     let disposed = false
     const wsUrl = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/socket?k=${encodeURIComponent(key)}`
     const ws = new WebSocket(wsUrl)
+    socket.current = ws
     ws.onopen = () => { if (!disposed) setConnected(true) }
     ws.onclose = () => { if (!disposed) setConnected(false) }
     ws.onerror = () => { if (!disposed) setConnected(false) }
     ws.onmessage = (event) => {
       let message: PlayerWireMessage
       try { message = JSON.parse(String(event.data)) as PlayerWireMessage } catch { return }
-      if (message.type === "snapshot") { projection.current = message.projection; ruler.current = message.ruler; audio.current = message.audio }
+      if (message.type === "snapshot") { projection.current = message.projection; ruler.current = message.ruler; audio.current = message.audio; setMoves(message.moves) }
+      else if (message.type === "moves") setMoves(message.moves)
+      else if (message.type === "move-result") { if (!message.ok) pendingRejects.current.push({ tokenId: message.tokenId, reason: message.reason ?? "Movimento recusado." }) }
       else if (message.type === "audio") audio.current = message.audio
       else if (message.type === "ruler") ruler.current = message.ruler
       else if (message.type === "camera") pendingCamera.current = { center: message.center, zoom: message.zoom }
@@ -82,7 +89,7 @@ export function PlayerView() {
       else return
       setRevision((value) => value + 1)
     }
-    return () => { disposed = true; ws.close() }
+    return () => { disposed = true; socket.current = null; ws.close() }
   }, [])
 
   useEffect(() => {
@@ -94,6 +101,8 @@ export function PlayerView() {
       onPut: () => undefined,
       onRemove: () => undefined,
       onOpenNote: () => undefined,
+      // O VTT confere o pedido (Jogador, paredes, mapa) e devolve a cena atualizada, ou a recusa.
+      onMove: (tokenId, position) => { socket.current?.send(JSON.stringify({ type: "move", tokenId, x: position.x, y: position.y })) },
     }, { editable: false }).then((created) => {
       if (disposed) { created.destroy(); return }
       view.current = created
@@ -112,6 +121,7 @@ export function PlayerView() {
     current.setRemoteRuler(ruler.current)
     if (pendingCamera.current) { current.setCamera(pendingCamera.current.center, pendingCamera.current.zoom); pendingCamera.current = null }
     for (const float of pendingFloats.current.splice(0)) current.floatText(float.tokenId, float.text, float.color)
+    for (const reject of pendingRejects.current.splice(0)) { current.revertToken(reject.tokenId); setNotice(reject.reason) }
     engine.current?.apply(audio.current)
     setPlayingCount(audio.current?.sounds.length ?? 0)
   }, [ready, revision])
@@ -136,6 +146,13 @@ export function PlayerView() {
   }
 
   useEffect(() => { view.current?.setTool(tool) }, [tool, ready])
+  // Só tokens "Jogador", e só enquanto o mestre permitir.
+  useEffect(() => { view.current?.setMovable((document) => moves && document.type === "token" && (document.data as { disposition?: string }).disposition === "player") }, [moves, ready])
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(""), 3500)
+    return () => window.clearTimeout(timer)
+  }, [notice])
 
   const keyboard = useSceneKeyboard(view, BINDINGS, (action) => {
     if (action === "toolRuler") setTool("ruler")
@@ -162,6 +179,7 @@ export function PlayerView() {
         ? <><button className="icon-button" title="Silenciar" aria-label="Silenciar" onClick={() => setSoundOn(false)}><Volume2 size={16} /></button><input type="range" min={0} max={1} step={0.05} value={volume} aria-label="Volume" onChange={(event) => setVolume(Number(event.target.value))} /></>
         : <button className={`sound-button ${playingCount > 0 || blocked ? "attention" : ""}`} onClick={enableSound}><VolumeX size={16} /> Ativar som{playingCount > 0 ? ` (${playingCount} tocando)` : ""}</button>}
     </div>}
+    {notice && <div className="player-notice" role="status">{notice}</div>}
     {!connected && <div className="player-status">Aguardando a transmissão…</div>}
   </main>
 }

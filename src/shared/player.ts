@@ -1,6 +1,6 @@
 import type { PlayerBarVisibility } from "./ipc"
 import type { NoteData, SceneData, TileData, TokenData, DrawingData, AssetPath } from "./scene"
-import { isAssetPath } from "./scene"
+import { isAlly, isAssetPath } from "./scene"
 import type { LogKind } from "./bridge"
 import type { WorldDocument } from "./world"
 import { cellPixels, isTokenVisible, renderVision, type RenderVision, type SceneVision } from "./vision"
@@ -35,7 +35,11 @@ export interface PlayerRuler { sceneId: string; from: { x: number; y: number }; 
  * deles: só muda quando o mestre usa "Puxar a câmera" (`camera`).
  */
 export type PlayerWireMessage =
-  | { type: "snapshot"; projection: PlayerProjection; ruler: PlayerRuler | null; audio: AudioState | null }
+  | { type: "snapshot"; projection: PlayerProjection; ruler: PlayerRuler | null; audio: AudioState | null; moves: boolean }
+  /** Resposta ao espectador que pediu para mover um token (só para ele). */
+  | { type: "move-result"; tokenId: string; ok: boolean; reason?: string }
+  /** O mestre ligou ou desligou o movimento de tokens Jogador pelos espectadores. */
+  | { type: "moves"; moves: boolean }
   /** O que está tocando; `null` com o áudio desligado para os jogadores. */
   | { type: "audio"; audio: AudioState | null }
   | { type: "camera"; center: { x: number; y: number }; zoom: number | null }
@@ -43,6 +47,11 @@ export type PlayerWireMessage =
   /** Texto flutuante de dano, cura ou teste sobre um token visível aos jogadores. */
   | { type: "float"; tokenId: string; text: string; kind: LogKind }
   | { type: "pong" }
+
+/** Mensagens que a página dos jogadores pode enviar. */
+export type PlayerClientMessage =
+  | { type: "ping" }
+  | { type: "move"; tokenId: string; x: number; y: number }
 
 const COORDINATE_LIMIT = 1_000_000
 
@@ -97,7 +106,7 @@ export function projectScene(input: ProjectionInput): PlayerProjection {
     // Com névoa, tokens fora da visão dos aliados nem saem do VTT.
     if (sight && !isTokenVisible(sight, document.id, document.data, cell)) continue
     const { actor: _actor, bars, vision: _vision, light: _light, ...withoutActor } = structuredClone(document.data)
-    const visibleBars = input.bars === "all" || (input.bars === "friendly" && document.data.disposition === "friendly") ? bars : []
+    const visibleBars = input.bars === "all" || (input.bars === "friendly" && isAlly(document.data.disposition)) ? bars : []
     if (withoutActor.image) assets.add(withoutActor.image)
     children.push({ id: document.id, type: "token", parentId: input.scene.id, sort: document.sort, data: { ...withoutActor, bars: visibleBars } })
   }
