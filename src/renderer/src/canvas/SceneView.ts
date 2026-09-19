@@ -155,6 +155,8 @@ export class SceneView {
   private interaction: Interaction | null = null
   private lastClick = { id: "", at: 0 }
   private readonly removeWheel: () => void
+  /** Pinça com dois dedos em andamento: zoom inicial, distância inicial e o ponto do mapa sob o centro dos dedos. */
+  private pinch: { zoom: number; distance: number; anchor: Point } | null = null
   private destroyed = false
   /** Vista dos Jogadores: quais tokens o espectador pode arrastar. */
   private movable: (document: WorldDocument) => boolean = () => false
@@ -180,11 +182,42 @@ export class SceneView {
       this.zoomAt({ x: event.clientX - rect.left, y: event.clientY - rect.top }, Math.exp(-event.deltaY * 0.0015))
     }
     const onContextMenu = (event: MouseEvent) => event.preventDefault()
+    // Pinça com dois dedos (celular e tablet). O PixiJS desliga os gestos do
+    // navegador no canvas (`touch-action: none`), então o zoom é feito aqui.
+    // Os ouvintes ficam em captura no container para rodar antes do PixiJS.
+    const touches = new Map<number, Point>()
+    const touchPoint = (event: PointerEvent): Point => {
+      const rect = container.getBoundingClientRect()
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    }
+    const onTouchDown = (event: PointerEvent) => {
+      if (event.pointerType !== "touch") return
+      touches.set(event.pointerId, touchPoint(event))
+      if (touches.size === 2) this.startPinch(...([...touches.values()] as [Point, Point]))
+    }
+    const onTouchMove = (event: PointerEvent) => {
+      if (event.pointerType !== "touch" || !touches.has(event.pointerId)) return
+      touches.set(event.pointerId, touchPoint(event))
+      if (this.pinch && touches.size >= 2) this.movePinch(...([...touches.values()].slice(0, 2) as [Point, Point]))
+    }
+    const onTouchUp = (event: PointerEvent) => {
+      if (!touches.delete(event.pointerId) || touches.size >= 2 || !this.pinch) return
+      this.pinch = null
+      this.handlers.onViewChange?.()
+    }
     container.addEventListener("wheel", onWheel, { passive: false })
     container.addEventListener("contextmenu", onContextMenu)
+    container.addEventListener("pointerdown", onTouchDown, true)
+    container.addEventListener("pointermove", onTouchMove, true)
+    container.addEventListener("pointerup", onTouchUp, true)
+    container.addEventListener("pointercancel", onTouchUp, true)
     this.removeWheel = () => {
       container.removeEventListener("wheel", onWheel)
       container.removeEventListener("contextmenu", onContextMenu)
+      container.removeEventListener("pointerdown", onTouchDown, true)
+      container.removeEventListener("pointermove", onTouchMove, true)
+      container.removeEventListener("pointerup", onTouchUp, true)
+      container.removeEventListener("pointercancel", onTouchUp, true)
     }
 
     app.stage.eventMode = "static"
@@ -1081,6 +1114,27 @@ export class SceneView {
     this.handlers.onViewChange?.()
   }
 
+  /** O segundo dedo tocou: cancela o gesto de um dedo (sem mover nada) e começa a pinça. */
+  private startPinch(first: Point, second: Point): void {
+    const interaction = this.interaction
+    this.interaction = null
+    if (interaction?.type === "drag") for (const entry of interaction.entries) this.items.get(entry.id)?.display.position.set(entry.start.x, entry.start.y)
+    if (interaction && interaction.type !== "pan") this.clearOverlay()
+    const middle = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 }
+    this.pinch = { zoom: this.world.scale.x, distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)), anchor: this.world.toLocal(middle) }
+  }
+
+  /** Aproxima pela distância entre os dedos e mantém sob eles o mesmo ponto do mapa (zoom e movimento juntos). */
+  private movePinch(first: Point, second: Point): void {
+    const pinch = this.pinch
+    if (!pinch) return
+    const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinch.zoom * Math.hypot(second.x - first.x, second.y - first.y) / pinch.distance))
+    const middle = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 }
+    this.world.scale.set(zoom)
+    this.world.position.set(middle.x - pinch.anchor.x * zoom, middle.y - pinch.anchor.y * zoom)
+    this.updateOverlayScale()
+  }
+
   // ── Interação ───────────────────────────────────────────────────────────
 
   private isLocked(item: Item): boolean {
@@ -1094,7 +1148,7 @@ export class SceneView {
 
   private onItemPointerDown(event: FederatedPointerEvent, id: string): void {
     const item = this.items.get(id)
-    if (event.button !== 0 || !item || TOOL_FOR_KIND[item.kind] !== this.tool) return
+    if (this.pinch || event.button !== 0 || !item || TOOL_FOR_KIND[item.kind] !== this.tool) return
     // Espectador: só arrasta tokens "Jogador", e um de cada vez.
     if (!this.options.editable) {
       if (!this.movable(item.document)) return
@@ -1133,6 +1187,7 @@ export class SceneView {
   }
 
   private onStagePointerDown(event: FederatedPointerEvent): void {
+    if (this.pinch) return
     if (event.button === 1 || event.button === 2) {
       this.interaction = { type: "pan", startGlobal: { x: event.global.x, y: event.global.y }, startPosition: { x: this.world.x, y: this.world.y } }
       this.app.canvas.style.cursor = "grabbing"

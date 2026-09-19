@@ -10,7 +10,7 @@ Ao usar a Fase 5, o usuário pediu que a câmera dos jogadores **não** acompanh
 - os textos flutuantes de dano apareçam também para os espectadores.
 
 ## Decisão
-- **Câmera:** cada espectador controla a própria câmera: arrasta o mapa com o botão esquerdo, usa a roda do mouse e as teclas WASD ou as setas. O servidor não repassa mais a câmera do mestre. A única forma de mover a câmera dos jogadores é o botão **Puxar a câmera**, que envia uma mensagem `camera` explícita.
+- **Câmera:** cada espectador controla a própria câmera: arrasta o mapa com o botão esquerdo, usa a roda do mouse e as teclas WASD ou as setas. No celular e no tablet, arrasta com um dedo e aproxima ou afasta com a pinça de dois dedos, que também move o mapa; os botões de aproximar e afastar ficam na barra do espectador (2026-09-19). O servidor não repassa mais a câmera do mestre. A única forma de mover a câmera dos jogadores é o botão **Puxar a câmera**, que envia uma mensagem `camera` explícita.
 - **Régua do mestre:** a régua da **ferramenta Régua** é repassada como `ruler` (cena, início e fim), com no máximo cerca de 20 atualizações por segundo, e só quando é medida na cena transmitida. A régua automática que aparece ao arrastar um token **não** é repassada, porque revelaria o movimento de um token oculto.
 - **Régua do espectador:** é local e fica só na página dele. Nenhuma mensagem sai do espectador, e o servidor continua somente leitura (ignora tudo além de `ping`).
 - **Textos de dano:** uma entrada nova do Registro com `tokenId` e `floatingText` vira a mensagem `float`, **somente** se o token estiver na projeção atual. Token oculto não gera texto.

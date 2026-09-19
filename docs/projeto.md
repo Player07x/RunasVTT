@@ -512,6 +512,12 @@ Atualizado em 2026-09-18.
   * a cópia dos sites veio junto (Tools 36, DM 30 e Book 17 arquivos);
   * a Vista dos Jogadores serviu `player.html` e os três arquivos de script e estilo de dentro do `asar`, todos com 200.
 
+**Zoom no celular e erro ao fechar (2026-09-19)**
+
+* **Vista dos Jogadores no celular:** o PixiJS desliga os gestos do navegador no canvas (`touch-action: none`), então não havia zoom no celular. O `SceneView` passou a tratar a pinça de dois dedos, que aproxima, afasta e move o mapa ao mesmo tempo. O segundo dedo cancela o gesto de um dedo sem mover token nem régua. A barra do espectador ganhou os botões **Aproximar** e **Afastar**, e a página inteira bloqueia o zoom do navegador para a interface não sair do lugar.
+* **Erro ao fechar o app** ("Object has been destroyed" em `BrowserManager.close`): no `before-quit`, a janela principal já tinha sido destruída quando as abas do navegador integrado eram fechadas. `close` e `layout` passaram a ignorar a janela destruída. O erro só aparecia com alguma aba aberta.
+* **Verificação:** pinça para aproximar e afastar, arraste com um dedo e botões testados em viewport de celular contra a transmissão real (`--smoke-player-server`). O fechamento foi testado com uma aba aberta pelo protocolo de depuração: a caixa de erro abria antes da correção e não abre depois.
+
 **Releases no GitHub (ADR 0018)**
 
 * `.github/workflows/release.yml`: um push de tag `v*` roda, num runner Windows, typecheck, testes, `seed:sites`, smoke e electron-builder. Depois publica a Release com o `.exe`, o `SHA256SUMS.txt` e notas geradas dos commits.
@@ -584,6 +590,7 @@ Atualizado em 2026-09-18.
 
 |Data|Mudança|
 |-|-|
+|2026-09-19|Vista dos Jogadores com pinça de dois dedos e botões de zoom no celular; corrigido o erro "Object has been destroyed" ao fechar o app com abas abertas. Release `v0.2.1`.|
 |2026-09-19|Repositório `Player07x/RunasVTT` tornado público (histórico conferido sem segredos) e primeira Release, `v0.2.0`.|
 |2026-09-19|Releases no GitHub (M19 / ADR 0018): workflow `release.yml` gera o instalador Windows a cada tag `v*` e o publica numa Release com SHA-256; `npm version` cria o commit e a tag.|
 |2026-09-18|Espectadores movem tokens "Jogador" (M18 / ADR 0017): nova categoria, pedido validado no VTT, opção no painel Jogadores; `lineBlocked` corrigido para as juntas entre paredes.|

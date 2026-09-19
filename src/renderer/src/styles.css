@@ -151,7 +151,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .scene-canvas { position: absolute; inset: 0; outline: 0; }
 .scene-host { position: absolute; inset: 0; }
 .scene-host canvas { display: block; }
-.player-page { position: relative; width: 100%; height: 100%; overflow: hidden; background: #080707; }
+.player-page { position: relative; width: 100%; height: 100%; overflow: hidden; background: #080707; touch-action: none; }
 .player-host { position: absolute; inset: 0; }
 .player-host canvas { display: block; }
 .player-status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--muted); box-shadow: 0 8px 24px rgb(0 0 0 / 35%); }
@@ -269,6 +269,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .player-tools button { display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
 .player-tools button:hover { background: var(--panel-hover); color: var(--text); }
 .player-tools button.active { background: color-mix(in srgb, var(--cyan) 18%, transparent); color: var(--cyan); }
+.player-tools-divider { height: 1px; margin: 2px 4px; background: var(--line); }
 .draw-options-label { padding: 0 6px; color: var(--muted); font-size: 12px; }
 
 /* Áudio */

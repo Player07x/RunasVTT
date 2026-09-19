@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Hand, Ruler, Volume2, VolumeX } from "lucide-react"
+import { Hand, Ruler, Volume2, VolumeX, ZoomIn, ZoomOut } from "lucide-react"
 import type { SceneChildren } from "./document-store"
 import { configurePlayerAssets, resolveAssetUrl } from "./api"
 import { AudioEngine } from "./audio-engine"
@@ -173,6 +173,9 @@ export function PlayerView() {
     {connected && <nav className="player-tools" aria-label="Ferramentas do espectador">
       <button className={tool === "select" ? "active" : ""} title={`Mover o mapa (${shortcut("toolSelect")})`} aria-label="Mover o mapa" onClick={() => setTool("select")}><Hand size={17} /></button>
       <button className={tool === "ruler" ? "active" : ""} title={`Régua, só na sua tela (${shortcut("toolRuler")})`} aria-label="Régua" onClick={() => setTool("ruler")}><Ruler size={17} /></button>
+      <span className="player-tools-divider" aria-hidden="true" />
+      <button title="Aproximar (ou afaste dois dedos na tela)" aria-label="Aproximar" onClick={() => view.current?.zoomBy(1.25)}><ZoomIn size={17} /></button>
+      <button title="Afastar (ou aproxime dois dedos na tela)" aria-label="Afastar" onClick={() => view.current?.zoomBy(0.8)}><ZoomOut size={17} /></button>
     </nav>}
     {connected && <div className="player-audio">
       {soundOn

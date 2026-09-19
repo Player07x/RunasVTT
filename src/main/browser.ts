@@ -183,8 +183,9 @@ export class BrowserManager {
   close(tabId: number): void {
     const view = this.tabs.get(tabId)
     if (!view) return
-    this.window.contentView.removeChildView(view)
-    view.webContents.close()
+    // Ao sair do app, a janela principal já foi destruída antes do `before-quit`.
+    if (!this.window.isDestroyed()) this.window.contentView.removeChildView(view)
+    if (!view.webContents.isDestroyed()) view.webContents.close()
     this.tabs.delete(tabId)
     this.suiteTabs.delete(tabId)
     const index = this.order.indexOf(tabId)
@@ -264,6 +265,7 @@ export class BrowserManager {
 
   /** Mostra só a aba ativa, e só quando a interface reservou uma área para ela. */
   private layout(): void {
+    if (this.window.isDestroyed()) return
     for (const [id, view] of this.tabs) {
       const visible = id === this.activeTabId && this.bounds !== null && this.bounds.width > 0 && this.bounds.height > 0
       if (visible) {
