@@ -238,7 +238,7 @@ Registradas em 2026-09-18.
 |7|Áudio local: playlists, loop, fade, canais, sons posicionais|RunasVTT|1 sem|**Concluída** (2026-09-18), com o áudio também na Vista dos Jogadores (ADR 0013)|
 |8|Regiões simples: teleporte, texto, terreno (opcional)|RunasVTT|2 sem|**Concluída** (2026-09-18) (ADR 0014)|
 |9|Backup do mundo: exportar `.zip` e snapshot antes de cada sessão|RunasVTT|3 dias|**Concluída** (2026-09-18) (ADR 0015)|
-|10|Sessões de jogadores: assentos com código, lobby, Runas Tools servido pelo VTT, ficha do assento e sincronização com a Mesa (ADRs 0019 e 0020)|ambos|3,5–4,5 sem|**Em andamento** (2026-09-21; etapas 10.0–10.6 implementadas, 10.7 em validação)|
+|10|Sessões de jogadores: assentos com código, lobby, Runas Tools servido pelo VTT, ficha do assento e sincronização com a Mesa (ADRs 0019 e 0020)|ambos|3,5–4,5 sem|**Concluída** (2026-09-21; Release `v0.3.1`)|
 
 * **Marcos:** o MVP jogável corresponde às fases 0 a 5 (cerca de 2 a 3 meses). Com visão e luz, cerca de 3,5 a 5 meses.
 * **Removidos:** jornal e compêndios, vídeo e A/V, distribuição e rede, nuvem própria do VTT e paridade avançada.
@@ -254,11 +254,11 @@ Registradas em 2026-09-18.
 |10.4|Anexação e sincronização: `seat-character`, token na cena da Mesa, sanitização no ingresso, imagem por hash, revisão e avisos ao assento|`player-transmission.ts`, `bridge-service.ts`, `bridge-ipc.ts`, `world-assets.ts`, `world-documents.ts`|4–6 dias|**Concluída** (2026-09-21)|
 |10.5|Conflito e reconexão: `baseRevision`, `mutationId`, `409` com a versão da mesa e retomada pelo código|`player-server.ts`, shim, Runas Tools|2–4 dias|**Concluída** (2026-09-21)|
 |10.6|Segurança e limites: tentativas por minuto, quota de escrita e de assets, revogação, `Origin`, movimento restrito ao token do assento|`player-server.ts`, `player-moves.ts`, `player-session.ts`|2–3 dias|**Concluída** (2026-09-21; quota de assets segue limitada à projeção permitida)|
-|10.7|Testes e publicação: unitários dos dois lados, ponta a ponta com três assentos, `seed:sites`, instalador, LAN e Quick Tunnel|`tests/`, `runas-suite`|4–5 dias|**Em validação** (testes locais e publicação em andamento)|
+|10.7|Testes e publicação: unitários dos dois lados, ponta a ponta com três assentos, `seed:sites`, instalador, LAN e Quick Tunnel|`tests/`, `runas-suite`|4–5 dias|**Concluída** (2026-09-21; CI, deploy dos sites e Release `v0.3.1`)|
 
 * **Decisão em aberto:** servido pelo VTT, o Tools do jogador roda numa origem nova a cada sessão — sem PWA instalável e com a galeria local vazia. A ficha do assento cobre o caso principal; quem quiser manter a galeria pessoal continua usando o site publicado fora da sessão e levando o JSON.
 
-**Progresso atual (2026-09-21):** o fluxo completo já está integrado. O VTT cria assentos efêmeros e códigos com hash, faz lobby por cookie `HttpOnly`, serve o Tools do espelho na mesma origem, injeta o shim `runasVTT` por assento e grava fichas como `seat-character`. O envio cria/atualiza automaticamente o token `Jogador` na cena da Mesa; alterações do mestre voltam por avisos WebSocket e HTTP com revisão, `mutationId` e resposta `409` para conflito. `Origin`, limite de conexões, tentativas de ingresso, quota de escrita, bloqueio do service worker espelhado e dono do token são verificados no servidor. Restam a matriz final de testes de publicação, LAN/Quick Tunnel e instalador.
+**Progresso atual (2026-09-21):** a Fase 10 está concluída. O VTT cria assentos efêmeros e códigos com hash, faz lobby por cookie `HttpOnly`, serve o Tools do espelho na mesma origem, injeta o shim `runasVTT` por assento e grava fichas como `seat-character`. O envio cria/atualiza automaticamente o token `Jogador` na cena da Mesa; alterações do mestre voltam por avisos WebSocket e HTTP com revisão, `mutationId` e resposta `409` para conflito. `Origin`, limite de conexões, tentativas de ingresso, quota de escrita, bloqueio do service worker espelhado e dono do token são verificados no servidor. A matriz local (typecheck, 134 testes e smoke do Electron), os testes/builds da suíte (82 testes, typecheck e Tools/DM), CI, deploy dos sites e instalador foram concluídos.
 
 \---
 
@@ -563,7 +563,7 @@ Atualizado em 2026-09-18.
   * no Electron real, pela página dos jogadores: Jogador movido e encaixado, Hostil não arrastável, parede bloqueando com aviso, passagem pela porta aberta e nada se move com a opção desligada.
 * **Bug achado e corrigido:** a checagem de parede deixava passar exatamente pela junta de duas paredes.
 
-**Fases 0 a 9 concluídas.** A **Fase 10** (sessões de jogadores) está em validação final desde 2026-09-21. Os ADRs 0019 e 0020 foram aceitos; as etapas 10.0–10.6 estão implementadas e a 10.7 cobre a matriz final de testes, seed dos sites, LAN/Quick Tunnel, instalador e publicação.
+**Fases 0 a 10 concluídas.** Os ADRs 0019 e 0020 foram aceitos; a sessão de jogadores foi publicada com a Release `v0.3.1`, incluindo o instalador Windows e o seed offline atualizado do Runas Tools.
 
 \---
 
@@ -614,6 +614,7 @@ Atualizado em 2026-09-18.
 
 |Data|Mudança|
 |-|-|
+|2026-09-21|Fase 10 concluída (M20 / ADRs 0019 e 0020): sessões com assentos, lobby por código, Runas Tools servido na mesma origem, fichas `seat-character` anexadas à Mesa e sincronização bidirecional com conflitos por revisão. CI, deploy do Tools/DM e Release `v0.3.1` (instalador Windows e `SHA256SUMS.txt`) publicados.|
 |2026-09-21|Fase 10 (etapas 10.0–10.6): lobby por código e cookie, Tools servido pelo VTT com shim por assento, ficha `seat-character` anexada à Mesa, sincronização bidirecional por HTTP/WebSocket, conflitos por revisão, limites de ingresso/escrita, `Origin`, service worker bloqueado e movimento restrito ao token do jogador. A matriz final da etapa 10.7 e a publicação ficam em validação.|
 |2026-09-20|Fase 10 iniciada (etapa 10.1): `PlayerSession` efêmera com 1–12 assentos, hash de códigos, tokens/revogação/revisão, IPC e tabela de códigos no painel do mestre. Typecheck, 131 testes e smoke do Electron passaram; as etapas 10.2–10.7 continuam planejadas.|
 |2026-09-20|Fase 10 planejada (M20 / ADRs 0019 e 0020): sessões com assentos e código por jogador, Runas Tools servido pelo próprio VTT, ficha do assento guardada no mundo, ficha por HTTP com revisão e conflito, e WebSocket só para avisos. Revisa os ADRs 0001, 0002, 0009 e 0017; nada implementado ainda.|
@@ -646,4 +647,3 @@ Atualizado em 2026-09-18.
 |2026-09-18|Correções da Vista dos Jogadores: Quick Tunnel usa os metadados e o checksum do release oficial atual do `cloudflared`; imagens transparentes mantêm o alpha e a borda colorida acompanha a silhueta; arrastar um token não publica seleção nem abre ficha.|
 |2026-09-18|Revisão da Fase 3: corrigidos o arquivo do core que faltava no commit da suíte, as mensagens de erro da ponte, o "Iniciar encontro" dentro do VTT e o espaçamento dos tokens importados; suíte publicada; teste de ponta a ponta contra os sites reais aprovado.|
 |2026-09-18|Fase 3 concluída: ponte `runasVTT` restrita às origens da suíte, importação Tools/DM → tokens, Mesa do DM sobre tokens, dano confirmado, Registro e textos flutuantes; testes e smoke do Electron aprovados.|
-
