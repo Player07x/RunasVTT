@@ -1,6 +1,6 @@
 {
   "name": "runas-vtt",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Mesa virtual desktop offline integrada à Runas Suite",
   "main": "out/main/index.js",
