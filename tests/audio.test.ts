@@ -135,6 +135,14 @@ describe("Range nos assets", () => {
     expect(parseRange("itens=0-1", 1000)).toBeNull()
   })
 
+  it("atende uma Range aberta até o fim, por maior que seja o arquivo", () => {
+    // Um teto por requisição encerra a mídia com `error` ao chegar no limite:
+    // uma música de 1 h morria em ~4 min quando o trecho era de 4 MB.
+    const size = 64 * 1024 * 1024
+    expect(parseRange("bytes=0-", size)).toEqual({ start: 0, end: size - 1 })
+    expect(parseRange("bytes=8388608-", size)).toEqual({ start: 8_388_608, end: size - 1 })
+  })
+
   it("responde 206 com o trecho pedido", async () => {
     const path = audio("e")
     await writeFile(join(dir, "dummy"), "")

@@ -30,6 +30,7 @@ O `PlayerServer` passa a servir o Runas Tools ao jogador, **na mesma origem da V
 O Runas Tools continua detectando a ponte como sempre, por `getRunasVtt(window)`, que já valida o protocolo e o formato. No `runas-suite`, sobram ajustes de interface: "Enviar ao VTT" como ação individual, envio em lote escondido no modo assento e o `galleryEntryId` vinculado ao assento. Exportar, importar JSON e ZIP e criar fichas continuam idênticos.
 
 ## Consequências
+- **O Tools abre dentro da Vista dos Jogadores**, num painel sobre o mapa, e não numa aba separada. Ele está na mesma origem, então basta um `iframe`; abrir fora tirava o jogador da mesa e, no celular, obrigava a alternar de janela a cada consulta à ficha. O painel continua montado ao ser fechado, para não recarregar a ficha nem perder o que foi digitado. Um link "abrir em outra aba" continua disponível no cabeçalho do painel.
 - **Funciona na LAN, sem internet.** O Quick Tunnel volta a ser o que era: opcional, para quem joga à distância.
 - **Some o acoplamento de versões.** O jogador usa o Tools que o VTT tem; o app não precisa esperar uma publicação do Cloudflare Pages para mudar o protocolo, nem conviver com um site publicado mais novo que o app instalado.
 - **A origem do jogador muda a cada sessão** (`http://IP:porta` ou o endereço do túnel). Consequências aceitas:

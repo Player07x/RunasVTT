@@ -7,7 +7,9 @@ import { assetResponse } from "./world-assets"
 import type { SiteMirror } from "./site-mirror"
 import { mirrorKey, navigationFallbackKeys } from "./mirror-policy"
 import { SEAT_BRIDGE_SCRIPT } from "../player/seat-bridge"
-import type { Duplex } from "node:stream"
+import { Readable, type Duplex } from "node:stream"
+import { pipeline } from "node:stream/promises"
+import type { ReadableStream as WebReadableStream } from "node:stream/web"
 import type { AssetPath } from "../shared/scene"
 import type { PlayerProjection, PlayerWireMessage } from "../shared/player"
 import type { SeatCharacterData } from "../shared/player-character"
@@ -262,8 +264,9 @@ export class PlayerServer {
         const range = typeof request.headers.range === "string" ? request.headers.range : null
         const result = await assetResponse(worldPath, `${parts[1]}/${parts[2]}`, range)
         response.writeHead(result.status, Object.fromEntries(result.headers.entries()))
-        if (request.method === "HEAD" || !result.body) { response.end(); return }
-        response.end(Buffer.from(await result.arrayBuffer()))
+        if (request.method === "HEAD" || !result.body) { await result.body?.cancel(); response.end(); return }
+        // Transmitido por stream: uma música de 1 h não pode virar um Buffer na memória do processo.
+        await pipeline(Readable.fromWeb(result.body as WebReadableStream<Uint8Array>), response).catch(() => undefined)
         return
       }
     }

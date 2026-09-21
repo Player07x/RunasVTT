@@ -78,12 +78,16 @@ export class AudioEngine {
     element.src = this.resolve(sound.audio)
     const voice: Voice = { sound, element, level: 0, target: 0, rate: 1, stopping: false }
     this.voices.set(sound.key, voice)
-    element.addEventListener("ended", () => {
+    const finish = () => {
       if (!this.voices.has(sound.key)) return
       this.release(voice)
       this.voices.delete(sound.key)
       this.onEnded?.(sound.key)
-    })
+    }
+    element.addEventListener("ended", finish)
+    // Sem isto, um arquivo ilegível (ou uma resposta truncada) emudece a faixa
+    // para sempre: `ended` nunca chega, a playlist não avança e o loop não reinicia.
+    element.addEventListener("error", finish)
     element.addEventListener("loadedmetadata", () => this.seek(voice), { once: true })
     this.retarget(voice, sound, sound.fade)
     this.start(voice)

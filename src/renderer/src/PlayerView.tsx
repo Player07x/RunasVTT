@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
-import { ExternalLink, Hand, KeyRound, LoaderCircle, Ruler, Volume2, VolumeX, ZoomIn, ZoomOut } from "lucide-react"
+import { ExternalLink, Hand, KeyRound, LoaderCircle, Ruler, ScrollText, Volume2, VolumeX, X, ZoomIn, ZoomOut } from "lucide-react"
 import type { SceneChildren } from "./document-store"
 import { configurePlayerAssets, resolveAssetUrl } from "./api"
 import { AudioEngine } from "./audio-engine"
@@ -71,6 +71,9 @@ export function PlayerView() {
   const [lobbyCode, setLobbyCode] = useState("")
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState("")
+  const [toolsOpen, setToolsOpen] = useState(false)
+  // Guardado à parte do `toolsOpen`: fechar o painel não recarrega a ficha nem perde o que foi digitado.
+  const [toolsUrl, setToolsUrl] = useState<string | null>(null)
   const pendingRejects = useRef<{ tokenId: string; reason: string }[]>([])
 
   useEffect(() => {
@@ -123,9 +126,15 @@ export function PlayerView() {
     } finally { setJoining(false) }
   }
 
+  /**
+   * O Tools é servido na mesma origem (ADR 0020), então ele abre dentro da
+   * própria Vista, sobre o mapa. Uma aba separada tirava o jogador da mesa e,
+   * no celular, obrigava a alternar de janela a cada consulta à ficha.
+   */
   function openTools(): void {
     if (!transmissionKey || !seat) return
-    window.open(`/tools/?k=${encodeURIComponent(transmissionKey)}`, "_blank", "noopener,noreferrer")
+    setToolsUrl((current) => current ?? `/tools/?k=${encodeURIComponent(transmissionKey)}`)
+    setToolsOpen(true)
   }
 
   useEffect(() => {
@@ -217,7 +226,7 @@ export function PlayerView() {
       <span className="player-tools-divider" aria-hidden="true" />
       <button title="Aproximar (ou afaste dois dedos na tela)" aria-label="Aproximar" onClick={() => view.current?.zoomBy(1.25)}><ZoomIn size={17} /></button>
       <button title="Afastar (ou aproxime dois dedos na tela)" aria-label="Afastar" onClick={() => view.current?.zoomBy(0.8)}><ZoomOut size={17} /></button>
-      {seat && <><span className="player-tools-divider" aria-hidden="true" /><button title="Abrir Runas Tools" aria-label="Abrir Runas Tools" onClick={openTools}><ExternalLink size={17} /></button></>}
+      {seat && <><span className="player-tools-divider" aria-hidden="true" /><button className={toolsOpen ? "active" : ""} title="Abrir a ficha (Runas Tools)" aria-label="Abrir a ficha" aria-expanded={toolsOpen} onClick={() => toolsOpen ? setToolsOpen(false) : openTools()}><ScrollText size={17} /></button></>}
     </nav>}
     {connected && <div className="player-audio">
       {soundOn
@@ -227,6 +236,14 @@ export function PlayerView() {
     {notice && <div className="player-notice" role="status">{notice}</div>}
     {!connected && <div className="player-status">Aguardando a transmissão…</div>}
     {lobbyOpen && <div className="player-lobby"><div className="player-lobby-card"><KeyRound size={26} className="player-lobby-icon" /><h1>Entrar como jogador</h1><p>Insira o código que o mestre entregou para liberar o Runas Tools e vincular sua ficha à mesa.</p><form onSubmit={(event) => void joinSeat(event)}><label><span>Código do jogador</span><input autoFocus value={lobbyCode} onChange={(event) => setLobbyCode(event.target.value.toUpperCase())} placeholder="ABCD-EFGH" autoComplete="one-time-code" maxLength={32} /></label><button className="primary" type="submit" disabled={joining || !lobbyCode.trim()}>{joining ? <><LoaderCircle size={15} className="spin" /> Entrando…</> : <><KeyRound size={15} /> Entrar na mesa</>}</button></form>{joinError && <div className="player-lobby-error" role="alert">{joinError}</div>}<button className="ghost" onClick={() => setLobbyOpen(false)}>Continuar como espectador</button></div></div>}
-    {seat && <div className="player-seat-badge"><span>Você está como <strong>{seat.label}</strong></span><button className="ghost small" onClick={openTools}><ExternalLink size={13} /> Abrir Runas Tools</button></div>}
+    {seat && <div className="player-seat-badge"><span>Você está como <strong>{seat.label}</strong></span><button className="ghost small" onClick={openTools}><ScrollText size={13} /> Abrir a ficha</button></div>}
+    {toolsUrl && <aside className={`player-tools-panel ${toolsOpen ? "open" : ""}`} aria-label="Runas Tools" aria-hidden={!toolsOpen}>
+      <header>
+        <strong><ScrollText size={14} /> Runas Tools</strong>
+        <a href={toolsUrl} target="_blank" rel="noopener noreferrer" title="Abrir em outra aba"><ExternalLink size={14} /></a>
+        <button title="Fechar" aria-label="Fechar o Runas Tools" onClick={() => setToolsOpen(false)}><X size={16} /></button>
+      </header>
+      <iframe src={toolsUrl} title="Runas Tools" />
+    </aside>}
   </main>
 }

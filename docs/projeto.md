@@ -614,6 +614,7 @@ Atualizado em 2026-09-18.
 
 |Data|Mudança|
 |-|-|
+|2026-09-21|Correções da Fase 10: áudio longo deixou de morrer aos ~4 min (o teto de 4 MB por requisição em `world-assets.ts` fazia o Chromium encerrar a mídia com `error` no fim do trecho — Range aberta agora vai até o fim do arquivo e o corpo é transmitido por stream), `AudioEngine` passou a tratar `error` como fim de faixa para a playlist avançar, e o Runas Tools abre dentro da própria Vista dos Jogadores em vez de uma aba separada.|
 |2026-09-21|Fase 10 concluída (M20 / ADRs 0019 e 0020): sessões com assentos, lobby por código, Runas Tools servido na mesma origem, fichas `seat-character` anexadas à Mesa e sincronização bidirecional com conflitos por revisão. CI, deploy do Tools/DM e Release `v0.3.1` (instalador Windows e `SHA256SUMS.txt`) publicados.|
 |2026-09-21|Fase 10 (etapas 10.0–10.6): lobby por código e cookie, Tools servido pelo VTT com shim por assento, ficha `seat-character` anexada à Mesa, sincronização bidirecional por HTTP/WebSocket, conflitos por revisão, limites de ingresso/escrita, `Origin`, service worker bloqueado e movimento restrito ao token do jogador. A matriz final da etapa 10.7 e a publicação ficam em validação.|
 |2026-09-20|Fase 10 iniciada (etapa 10.1): `PlayerSession` efêmera com 1–12 assentos, hash de códigos, tokens/revogação/revisão, IPC e tabela de códigos no painel do mestre. Typecheck, 131 testes e smoke do Electron passaram; as etapas 10.2–10.7 continuam planejadas.|

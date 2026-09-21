@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto"
-import { existsSync } from "node:fs"
-import { mkdir, open, readFile, writeFile } from "node:fs/promises"
+import { createReadStream, existsSync } from "node:fs"
+import { mkdir, stat, writeFile } from "node:fs/promises"
 import { extname, join } from "node:path"
+import { Readable } from "node:stream"
 import { WORLD_ASSETS_DIR, type AssetKind } from "../shared/world"
 import { isAssetPath, type AssetPath } from "../shared/scene"
 
@@ -45,10 +46,15 @@ const MIME_TYPES: Record<string, string> = {
   mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", m4a: "audio/mp4", flac: "audio/flac", webm: "audio/webm", opus: "audio/ogg",
 }
 
-/** Maior trecho servido por requisição com Range aberta (`bytes=N-`). */
-const RANGE_CHUNK = 4 * 1024 * 1024
-
-/** Interpreta `bytes=início-fim`; `null` para cabeçalho ausente ou inválido. */
+/**
+ * Interpreta `bytes=início-fim`; `null` para cabeçalho ausente ou inválido.
+ *
+ * Uma Range aberta (`bytes=N-`) é atendida até o fim do arquivo. Um teto por
+ * requisição parece inofensivo, mas quebra faixas longas: o Chromium encerra
+ * a mídia com `error` ao chegar no limite do trecho (uma música de 1 h a
+ * 130 kbps morre em ~4 min por trecho de 4 MB). O corpo é transmitido por
+ * stream, então servir o arquivo inteiro não carrega nada em memória.
+ */
 export function parseRange(header: string | null | undefined, size: number): { start: number; end: number } | null {
   const match = /^bytes=(\d*)-(\d*)$/.exec(header?.trim() ?? "")
   if (!match || (!match[1] && !match[2])) return null
@@ -61,9 +67,14 @@ export function parseRange(header: string | null | undefined, size: number): { s
     end = size - 1
   } else {
     start = Number(match[1])
-    end = match[2] ? Math.min(Number(match[2]), size - 1) : Math.min(size - 1, start + RANGE_CHUNK - 1)
+    end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1
   }
   return start <= end && start < size ? { start, end } : null
+}
+
+/** Corpo lido do disco sob demanda, para não carregar um mapa ou uma música inteira em memória. */
+function fileStream(file: string, start?: number, end?: number): ReadableStream<Uint8Array> {
+  return Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream<Uint8Array>
 }
 
 /**
@@ -76,19 +87,12 @@ export async function assetResponse(worldPath: string, path: string, range?: str
   if (!file) return new Response(null, { status: 404 })
   const headers: Record<string, string> = { "content-type": MIME_TYPES[extname(file).slice(1)] ?? "application/octet-stream", "cache-control": "public, max-age=31536000, immutable", "access-control-allow-origin": "*", "accept-ranges": "bytes" }
   try {
-    if (!range) return new Response(await readFile(file), { headers })
-    const handle = await open(file, "r")
-    try {
-      const { size } = await handle.stat()
-      const slice = parseRange(range, size)
-      if (!slice) return new Response(null, { status: 416, headers: { ...headers, "content-range": `bytes */${size}` } })
-      const length = slice.end - slice.start + 1
-      const buffer = Buffer.alloc(length)
-      await handle.read(buffer, 0, length, slice.start)
-      return new Response(buffer, { status: 206, headers: { ...headers, "content-range": `bytes ${slice.start}-${slice.end}/${size}`, "content-length": String(length) } })
-    } finally {
-      await handle.close()
-    }
+    const { size } = await stat(file)
+    if (!range) return new Response(fileStream(file), { headers: { ...headers, "content-length": String(size) } })
+    const slice = parseRange(range, size)
+    if (!slice) return new Response(null, { status: 416, headers: { ...headers, "content-range": `bytes */${size}` } })
+    const length = slice.end - slice.start + 1
+    return new Response(fileStream(file, slice.start, slice.end), { status: 206, headers: { ...headers, "content-range": `bytes ${slice.start}-${slice.end}/${size}`, "content-length": String(length) } })
   } catch {
     return new Response(null, { status: 404 })
   }
