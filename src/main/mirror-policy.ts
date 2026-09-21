@@ -72,7 +72,17 @@ export function navigationFallbackKeys(url: string): string[] {
   return [...keys]
 }
 
-const ASSET_PATTERN = /["'(](\/(?:_next\/static|_vinext_fonts)\/[^"'()\s\\]+?\.(?:js|mjs|css|woff2?|otf|ttf|png|jpe?g|webp|svg|gif|ico|json))["')]/g
+/**
+ * Arquivos do build, por caminho absoluto (`"/_next/static/…"`) ou relativo
+ * (`"./_next/static/…"`).
+ *
+ * O caminho relativo é o formato da lista de pré-cache do service worker do
+ * Runas Tools, e é a única lista completa dos pedaços que ele carrega sob
+ * demanda: os nomes dos chunks do `import()` são montados em tempo de
+ * execução e não aparecem escritos em nenhum outro arquivo. Sem eles na cópia
+ * local, a ficha do jogador não abre (ADR 0020).
+ */
+const ASSET_PATTERN = /["'(]((?:\.{1,2})?\/(?:_next\/static|_vinext_fonts)\/[^"'()\s\\]+?\.(?:js|mjs|css|woff2?|otf|ttf|png|jpe?g|webp|svg|gif|ico|json))["')]/g
 const ROOT_FILE_PATTERN = /(?:href|src)=["'](\/[^"'#?\s]+\.(?:png|webp|svg|ico|otf|woff2?|webmanifest|json))["']/g
 /** Ícones do manifesto: `"src": "/icon-192.png"` ou `"./icon-192.png"`. */
 const MANIFEST_SRC_PATTERN = /"src"\s*:\s*"((?:\.{0,2}\/)?[^"#?\s:]+\.(?:png|webp|svg|ico))"/g

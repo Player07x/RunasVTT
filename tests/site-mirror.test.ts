@@ -99,6 +99,20 @@ describe("política da cópia local", () => {
     expect(extractAssetUrls('{"icons":[{"src":"./icon-512.png"}]}', `${tools}/manifest.webmanifest`)).toEqual([`${tools}/icon-512.png`])
     expect(extractAssetUrls('const APP_SHELL = ["./", "./Norse.otf", "./runic-card-back.webp"]', `${tools}/sw.js`).sort()).toEqual([`${tools}/Norse.otf`, `${tools}/runic-card-back.webp`])
   })
+
+  /**
+   * A lista de pré-cache do service worker do Runas Tools é a única lista
+   * completa dos pedaços que ele carrega sob demanda — os nomes são montados
+   * em tempo de execução e não aparecem escritos em nenhum outro arquivo. No
+   * assento o service worker é bloqueado, então esses pedaços só chegam ao
+   * jogador pela cópia local: sem eles, a ficha não abre (ADR 0020).
+   */
+  it("encontra o JavaScript e o CSS relativos da lista de pré-cache", () => {
+    const tools = "https://runas-tools.pages.dev"
+    expect(extractAssetUrls('const PRECACHE_ASSETS = ["./_next/static/chunks/ficha.js","./_next/static/chunks/0-tema.css"]', `${tools}/sw.js`).sort()).toEqual([
+      `${tools}/_next/static/chunks/0-tema.css`, `${tools}/_next/static/chunks/ficha.js`,
+    ])
+  })
 })
 
 describe("respond", () => {
