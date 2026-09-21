@@ -39,8 +39,10 @@ const api: VttApi = {
       return () => { ipcRenderer.removeListener(IPC.playerStateChanged, handler) }
     },
     displays: () => ipcRenderer.invoke(IPC.playerDisplays),
-    start: (port) => ipcRenderer.invoke(IPC.playerStart, port),
+    start: (port, seatCount) => ipcRenderer.invoke(IPC.playerStart, port, seatCount),
     stop: () => ipcRenderer.invoke(IPC.playerStop),
+    rotateSeatCode: (slotId) => ipcRenderer.invoke(IPC.playerRotateSeatCode, slotId),
+    clearSeat: (slotId) => ipcRenderer.invoke(IPC.playerClearSeat, slotId),
     openWindow: () => ipcRenderer.invoke(IPC.playerOpenWindow),
     setScene: (sceneId) => ipcRenderer.invoke(IPC.playerSetScene, sceneId),
     ruler: (ruler) => ipcRenderer.invoke(IPC.playerRuler, ruler),

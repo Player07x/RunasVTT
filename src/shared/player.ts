@@ -46,6 +46,10 @@ export type PlayerWireMessage =
   | { type: "ruler"; ruler: PlayerRuler | null }
   /** Texto flutuante de dano, cura ou teste sobre um token visível aos jogadores. */
   | { type: "float"; tokenId: string; text: string; kind: LogKind }
+  /** Identidade confirmada depois do upgrade autenticado. */
+  | { type: "seat-status"; seat: { slotId: string; label: string } }
+  /** A ficha privada mudou; o Tools busca o envelope por HTTP. */
+  | { type: "character-changed"; revision: number }
   | { type: "pong" }
 
 /** Mensagens que a página dos jogadores pode enviar. */

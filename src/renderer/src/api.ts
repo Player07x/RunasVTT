@@ -34,7 +34,7 @@ function createBrowserPreviewApi(): VttApi {
   const documents = new Map<string, WorldDocument>()
   const documentListeners = new Set<(change: DocumentChange) => void>()
   const playerListeners = new Set<(value: PlayerState) => void>()
-  const player: PlayerState = { enabled: false, port: 30000, key: null, localUrl: null, publicUrl: null, sceneId: null, audio: true, moves: true, bars: "friendly", spectators: 0 }
+  const player: PlayerState = { enabled: false, port: 30000, key: null, localUrl: null, publicUrl: null, sceneId: null, audio: true, moves: true, bars: "friendly", spectators: 0, players: 0, sessionId: null, seats: [] }
   let settings = defaultSettings()
   const settingsListeners = new Set<(value: AppSettings) => void>()
   const emitPlayer = () => playerListeners.forEach((listener) => listener({ ...player }))
@@ -85,8 +85,20 @@ function createBrowserPreviewApi(): VttApi {
       state: async () => ({ ...player }),
       onState: (listener) => { playerListeners.add(listener); return () => { playerListeners.delete(listener) } },
       displays: async (): Promise<PlayerDisplay[]> => [{ id: "preview", label: "Esta tela", bounds: { x: 0, y: 0, width: 1280, height: 720 }, workArea: { x: 0, y: 0, width: 1280, height: 720 } }],
-      start: async (port) => { player.enabled = true; player.port = port ?? 30000; player.key = "preview"; player.localUrl = `http://localhost:${player.port}/?k=preview`; emitPlayer(); return { ...player } },
-      stop: async () => { player.enabled = false; player.key = null; player.localUrl = null; player.publicUrl = null; emitPlayer() },
+      start: async (port, seatCount) => {
+        player.enabled = true
+        player.port = port ?? 30000
+        player.key = "preview"
+        player.localUrl = `http://localhost:${player.port}/?k=preview`
+        const count = Math.max(1, Math.min(12, Math.floor(seatCount ?? 1)))
+        player.sessionId = "preview-session"
+        player.seats = Array.from({ length: count }, (_, index) => ({ slotId: `player-${index + 1}`, label: `Jogador ${index + 1}`, code: `PREVIEW-${index + 1}`, status: "available" as const, tokenId: null, revision: 0, lastSeenAt: null }))
+        emitPlayer()
+        return { ...player }
+      },
+      stop: async () => { player.enabled = false; player.key = null; player.localUrl = null; player.publicUrl = null; player.sessionId = null; player.players = 0; player.spectators = 0; player.seats = []; emitPlayer() },
+      rotateSeatCode: async (slotId) => { const seat = player.seats.find((candidate) => candidate.slotId === slotId); if (!seat) throw new Error("Assento de jogador não encontrado."); seat.code = `PREVIEW-${slotId.toUpperCase()}-${Date.now()}`; emitPlayer(); return { ...player, seats: player.seats.map((candidate) => ({ ...candidate })) } },
+      clearSeat: async (slotId) => { const seat = player.seats.find((candidate) => candidate.slotId === slotId); if (!seat) throw new Error("Assento de jogador não encontrado."); seat.status = "available"; seat.tokenId = null; seat.revision = 0; emitPlayer(); return { ...player, seats: player.seats.map((candidate) => ({ ...candidate })) } },
       openWindow: async () => undefined,
       setScene: async (sceneId) => { player.sceneId = sceneId; emitPlayer() },
       ruler: async () => undefined,

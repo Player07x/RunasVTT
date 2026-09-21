@@ -135,6 +135,8 @@ export interface TokenData {
   bars: TokenBar[]
   showName: boolean
   actor: TokenActor | null
+  /** Assento que possui este token, sem entrar no envelope da ficha. */
+  playerSlotId?: string
   vision: TokenVision
   light: TokenLight
 }
@@ -222,6 +224,9 @@ function num(value: unknown, fallback: number, min = -Infinity, max = Infinity):
 }
 function str(value: unknown, fallback: string, maxLength = 200): string {
   return typeof value === "string" ? value.slice(0, maxLength) : fallback
+}
+function identifier(value: unknown): string | undefined {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : undefined
 }
 function bool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback
@@ -341,6 +346,7 @@ export function normalizeToken(value: unknown): TokenData {
     bars: Array.isArray(raw.bars) ? raw.bars.slice(0, 3).map(normalizeBar) : [],
     showName: bool(raw.showName, true),
     actor: normalizeActor(raw.actor),
+    ...(identifier(raw.playerSlotId) ? { playerSlotId: identifier(raw.playerSlotId) } : {}),
     vision: normalizeTokenVision(raw.vision),
     light: normalizeTokenLight(raw.light),
   }

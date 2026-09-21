@@ -273,11 +273,19 @@ function registerPlayerIpc(transmission: PlayerTransmission, userData: string): 
     bounds: display.bounds,
     workArea: display.workArea,
   })))
-  ipcMain.handle(IPC.playerStart, async (_event, port?: unknown) => transmission.start(port === undefined ? 30000 : Number(port)))
+  ipcMain.handle(IPC.playerStart, async (_event, port?: unknown, seatCount?: unknown) => transmission.start(port === undefined ? 30000 : Number(port), seatCount === undefined ? 1 : Number(seatCount)))
   ipcMain.handle(IPC.playerStop, async () => {
     stopPublicTunnel()
     await transmission.stop()
     if (playerWindow && !playerWindow.isDestroyed()) { playerWindow.close(); playerWindow = null }
+  })
+  ipcMain.handle(IPC.playerRotateSeatCode, (_event, slotId: unknown) => {
+    if (typeof slotId !== "string") throw new Error("Assento inválido.")
+    return transmission.rotateSeatCode(slotId)
+  })
+  ipcMain.handle(IPC.playerClearSeat, (_event, slotId: unknown) => {
+    if (typeof slotId !== "string") throw new Error("Assento inválido.")
+    return transmission.clearSeat(slotId)
   })
   ipcMain.handle(IPC.playerOpenWindow, () => openPlayerWindow())
   ipcMain.handle(IPC.playerSetScene, (_event, sceneId: unknown) => {
@@ -401,7 +409,7 @@ void app.whenReady().then(() => {
   visionService = new VisionService(() => store.openWorld?.database ?? null)
   playerTransmission = new PlayerTransmission(store, join(__dirname, "../renderer"), (state) => {
     for (const current of BrowserWindow.getAllWindows()) current.webContents.send(IPC.playerStateChanged, state)
-  }, visionService)
+  }, visionService, mirror)
   const transmission = playerTransmission
   // Movimentos dos espectadores passam pelo mesmo caminho das mudanças da mesa (visão, regiões, áudio, sites).
   transmission.setCommit(broadcast)

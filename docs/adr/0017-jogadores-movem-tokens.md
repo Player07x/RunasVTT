@@ -2,6 +2,7 @@
 
 - **Status:** aceita (2026-09-18)
 - **Revisa:** ADR 0001 e ADR 0009. A Vista dos Jogadores deixa de ser estritamente somente leitura e passa a aceitar um único pedido: mover um token "Jogador".
+- **Revisada por:** ADR 0019 (com assentos, o jogador move o token do próprio assento, e não qualquer token "Jogador").
 
 ## Contexto
 O usuário pediu que os espectadores possam mover tokens, mas **somente** os marcados como "Jogador", uma categoria nova. Até aqui o servidor de transmissão ignorava tudo o que os clientes mandavam, exceto `ping`. Não há contas: qualquer pessoa com o link pode enviar mensagens.

@@ -1,6 +1,7 @@
 # ADR 0002 — Navegador integrado com espelho local na mesma origem
 
 - **Status:** aceita (2026-09-18) · implementação na Fase 1
+- **Revisada por:** ADR 0020 (o espelho local passa a servir o Runas Tools também aos jogadores, numa origem própria da sessão)
 
 ## Contexto
 Runas Tools, Runas DM e Runas Book devem funcionar dentro do VTT em tempo real e também sem internet, vindo pré-instalados. Os dados desses sites (fichas, bestiário, wiki) vivem no IndexedDB e no localStorage, que são separados por **origem**.

@@ -39,6 +39,8 @@ export const IPC = {
   playerDisplays: "player:displays",
   playerStart: "player:start",
   playerStop: "player:stop",
+  playerRotateSeatCode: "player:rotate-seat-code",
+  playerClearSeat: "player:clear-seat",
   playerOpenWindow: "player:open-window",
   playerSetScene: "player:set-scene",
   playerRuler: "player:ruler",
@@ -160,6 +162,19 @@ export interface PlayerDisplay {
 
 export type PlayerBarVisibility = "friendly" | "all" | "none"
 
+export type PlayerSeatStatus = "available" | "connected" | "attached"
+
+/** Assento efêmero da sessão; o código só aparece na criação/regeneração. */
+export interface PlayerSeatState {
+  slotId: string
+  label: string
+  code?: string
+  status: PlayerSeatStatus
+  tokenId: string | null
+  revision: number
+  lastSeenAt: number | null
+}
+
 export interface PlayerState {
   enabled: boolean
   port: number
@@ -173,6 +188,10 @@ export interface PlayerState {
   moves: boolean
   bars: PlayerBarVisibility
   spectators: number
+  /** Jogadores autenticados conectados por cookie de assento. */
+  players: number
+  sessionId: string | null
+  seats: PlayerSeatState[]
 }
 
 export type BrowserCommand = "back" | "forward" | "reload"
@@ -221,8 +240,10 @@ export interface VttApi {
     state(): Promise<PlayerState>
     onState(listener: (state: PlayerState) => void): () => void
     displays(): Promise<PlayerDisplay[]>
-    start(port?: number): Promise<PlayerState>
+    start(port?: number, seatCount?: number): Promise<PlayerState>
     stop(): Promise<void>
+    rotateSeatCode(slotId: string): Promise<PlayerState>
+    clearSeat(slotId: string): Promise<PlayerState>
     openWindow(): Promise<void>
     setScene(sceneId: string | null): Promise<void>
     /** Régua da ferramenta Régua do mestre, repassada aos espectadores; `null` apaga. */

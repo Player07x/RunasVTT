@@ -116,4 +116,12 @@ describe("transmissão", () => {
     expect(committed).toEqual([])
     expect(instance.state().moves).toBe(false)
   })
+
+  it("limita um cliente autenticado ao token do próprio assento", () => {
+    const { instance, committed } = transmission()
+    const token = database.get("heroi")!
+    putDocument(database, { id: token.id, type: "token", parentId: token.parentId, data: { ...(token.data as TokenData), playerSlotId: "player-2" } })
+    expect(instance.handleClientMessage({ type: "move", tokenId: "heroi", x: 250, y: 250 }, { slotId: "player-1", label: "Jogador 1" })).toMatchObject({ ok: false, reason: expect.stringMatching(/outro jogador/) })
+    expect(committed).toEqual([])
+  })
 })

@@ -61,4 +61,28 @@ describe("transmissão da Vista dos Jogadores", () => {
     transmission.onDocumentChange(log("visivel"))
     expect(sent).toEqual([{ type: "float", tokenId: "visivel", text: "-9", kind: "damage" }])
   })
+
+  it("anexa a ficha autenticada ao assento e à cena da Mesa", async () => {
+    transmission.setMasterView({ sceneId: "cena", selection: [], center: { x: 100, y: 100 }, zoom: 1 })
+    const state = await transmission.start(31000 + (Date.now() % 500), 1)
+    const server = (transmission as unknown as { server: { addressPort: number } }).server
+    const base = `http://127.0.0.1:${server.addressPort}`
+    const key = state.key!
+    const joined = await fetch(`${base}/seat/join?k=${key}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: state.seats[0]!.code }) })
+    expect(joined.status).toBe(200)
+    const cookie = joined.headers.get("set-cookie")?.split(";")[0] ?? ""
+    const put = await fetch(`${base}/seat/character?k=${key}`, { method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({
+      character: { envelope: { version: 1, character: { name: "Lia" } }, summary: { name: "Lia", bars: [{ label: "PV", value: 10, max: 10 }] }, source: "tools", tokenImage: null, tokenSize: 1 },
+      tokenId: null,
+      baseRevision: 0,
+      mutationId: "mutation-1",
+    }) })
+    expect(put.status).toBe(200)
+    const body = await put.json() as { character: { revision: number; tokenId: string | null } }
+    expect(body.character.revision).toBe(1)
+    expect(body.character.tokenId).toMatch(/^seat-token-player-1/)
+    expect(store.openWorld?.database.list("seat-character", null)).toHaveLength(1)
+    expect(store.openWorld?.database.list("token", "cena").some((document) => (document.data as { playerSlotId?: string }).playerSlotId === "player-1")).toBe(true)
+    await transmission.stop()
+  })
 })

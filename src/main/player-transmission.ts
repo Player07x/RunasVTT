@@ -1,16 +1,24 @@
 import { networkInterfaces } from "node:os"
 import { randomBytes } from "node:crypto"
-import type { DocumentChange, PlayerBarVisibility, PlayerState, TableReport } from "../shared/ipc"
-import type { LogData, SceneData } from "../shared/scene"
+import type { DocumentChange, PlayerBarVisibility, PlayerSeatState, PlayerState, TableReport } from "../shared/ipc"
+import { barColor, decodeTokenImage, normalizeBridgeCharacter, type CharacterSummary } from "../shared/bridge"
+import type { LogData, SceneData, TokenData } from "../shared/scene"
+import { DEFAULT_GRID, normalizeToken } from "../shared/scene"
 import type { WorldDocument } from "../shared/world"
 import { normalizeRuler, projectScene, type PlayerProjection, type PlayerRuler } from "../shared/player"
-import { PlayerServer, type PlayerWireMessage } from "./player-server"
+import { PlayerServer, type JoinedPlayerSeat, type PlayerSeatConnection, type PlayerWireMessage, type SeatCharacterWrite, type SeatCharacterWriteResult } from "./player-server"
+import type { SiteMirror } from "./site-mirror"
 import type { WorldStore } from "./world-store"
 import type { VisionService } from "./vision-service"
 import type { AudioState } from "../shared/audio"
 import type { DocumentChange as Change } from "../shared/ipc"
-import { putDocument } from "./world-documents"
+import { deleteDocument, putDocument } from "./world-documents"
 import { normalizeMoveRequest, validatePlayerMove } from "./player-moves"
+import { PlayerSession, normalizeSeatCount } from "./player-session"
+import type { SeatCharacterData } from "../shared/player-character"
+import { importAsset } from "./world-assets"
+import { snapTokenCenter } from "../shared/grid"
+import { randomUUID } from "node:crypto"
 
 const DEFAULT_PORT = 30000
 
@@ -39,6 +47,9 @@ export class PlayerTransmission {
   private enabled = false
   private port = DEFAULT_PORT
   private key: string | null = null
+  private session: PlayerSession | null = null
+  private playerCount = 0
+  private readonly seatWrites = new Set<string>()
   private publicUrl: string | null = null
   private sceneId: string | null = null
   private table: TableReport = { sceneId: null, selection: [], center: null, zoom: null }
@@ -53,7 +64,7 @@ export class PlayerTransmission {
   private lastProjection: PlayerProjection = { scene: null, children: [], assets: [], vision: null, regions: [] }
   private onStateChange: (state: PlayerState) => void
 
-  constructor(private readonly store: WorldStore, staticRoot: string, onStateChange: (state: PlayerState) => void, private readonly vision: VisionService | null = null) {
+  constructor(private readonly store: WorldStore, staticRoot: string, onStateChange: (state: PlayerState) => void, private readonly vision: VisionService | null = null, siteMirror: SiteMirror | null = null) {
     this.onStateChange = onStateChange
     this.server = new PlayerServer({
       staticRoot,
@@ -62,13 +73,20 @@ export class PlayerTransmission {
       allowedAssets: () => [...this.lastProjection.assets, ...(this.audioEnabled ? this.audio.sounds.map((sound) => sound.audio) : [])],
       snapshot: () => this.snapshotMessage(),
       onSpectators: (spectators) => { this.emit(spectators) },
-      onClientMessage: (message) => this.handleClientMessage(message),
+      onPlayers: (players) => { this.playerCount = players; this.emit() },
+      joinSeat: (code) => this.joinSeat(code),
+      authenticateSeat: (token) => this.authenticateSeat(token),
+      getSeatCharacter: (seat) => this.getSeatCharacter(seat),
+      putSeatCharacter: (seat, input) => this.putSeatCharacter(seat, input),
+      deleteSeatCharacter: (seat) => { this.deleteSeatCharacter(seat) },
+      toolsMirror: siteMirror ?? undefined,
+      onClientMessage: (message, seat) => this.handleClientMessage(message, seat),
     })
   }
 
   state(): PlayerState {
     const localUrl = this.enabled && this.key ? `http://${localAddress()}:${this.port}/?k=${this.key}` : null
-    return { enabled: this.enabled, port: this.port, key: this.key, localUrl, publicUrl: this.publicUrl, sceneId: this.sceneId, audio: this.audioEnabled, moves: this.movesEnabled, bars: this.bars, spectators: this.server.spectatorCount }
+    return { enabled: this.enabled, port: this.port, key: this.key, localUrl, publicUrl: this.publicUrl, sceneId: this.sceneId, audio: this.audioEnabled, moves: this.movesEnabled, bars: this.bars, spectators: this.server.spectatorCount, players: this.playerCount, sessionId: this.session?.id ?? null, seats: this.seatStates() }
   }
 
   /** URL usada pela BrowserWindow local; a página é a mesma dos espectadores. */
@@ -76,17 +94,20 @@ export class PlayerTransmission {
     return this.enabled && this.key ? `http://127.0.0.1:${this.port}/?k=${this.key}` : null
   }
 
-  async start(port = DEFAULT_PORT): Promise<PlayerState> {
+  async start(port = DEFAULT_PORT, seatCount = 1): Promise<PlayerState> {
     if (!this.store.openWorld) throw new Error("Abra um mundo antes de ligar a Vista dos Jogadores.")
     this.port = validPort(port)
+    const created = PlayerSession.create(normalizeSeatCount(seatCount))
     const key = randomBytes(16).toString("hex")
     await this.server.start(this.port, key)
     this.key = key
+    this.session = created.session
+    this.playerCount = 0
     this.enabled = true
     this.publicUrl = null
     this.refreshProjection()
     this.emit(0)
-    return this.state()
+    return { ...this.state(), seats: this.seatStates(created.codes) }
   }
 
   async stop(): Promise<void> {
@@ -95,7 +116,194 @@ export class PlayerTransmission {
     this.key = null
     this.publicUrl = null
     this.ruler = null
+    this.session = null
+    this.playerCount = 0
     this.emit(0)
+  }
+
+  /** Troca o código de um assento sem reiniciar a transmissão. */
+  rotateSeatCode(slotId: string): PlayerState {
+    if (!this.session) throw new Error("Ligue a transmissão antes de administrar os assentos.")
+    const code = this.session.rotateCode(slotId)
+    return { ...this.state(), seats: this.seatStates({ [slotId]: code }) }
+  }
+
+  /** Remove a ficha e a conexão do assento; o código continua válido. */
+  clearSeat(slotId: string): PlayerState {
+    if (!this.session) throw new Error("Ligue a transmissão antes de administrar os assentos.")
+    const seat = this.session.getSeat(slotId)
+    if (!seat) throw new Error("Assento de jogador não encontrado.")
+    this.deleteSeatCharacter({ slotId: seat.slotId, label: seat.label })
+    this.session.clearSeat(slotId)
+    const state = this.state()
+    this.emit()
+    return state
+  }
+
+  private joinSeat(code: string): JoinedPlayerSeat | null {
+    const session = this.session
+    if (!session) return null
+    const seat = session.authenticateCode(code)
+    if (!seat) return null
+    const token = session.issueAccessToken(seat.slotId)
+    this.emit()
+    return { seat: { slotId: seat.slotId, label: seat.label }, token }
+  }
+
+  private authenticateSeat(token: string): PlayerSeatConnection | null {
+    const seat = this.session?.authenticateAccessToken(token)
+    return seat ? { slotId: seat.slotId, label: seat.label } : null
+  }
+
+  private seatCharacterId(slotId: string): string { return `seat-character-${slotId}` }
+
+  private getSeatCharacter(seat: PlayerSeatConnection): SeatCharacterData | null {
+    const document = this.store.openWorld?.database.get(this.seatCharacterId(seat.slotId))
+    if (!document || document.type !== "seat-character") return null
+    return structuredClone(document.data as SeatCharacterData)
+  }
+
+  private async putSeatCharacter(seat: PlayerSeatConnection, input: SeatCharacterWrite): Promise<SeatCharacterWriteResult> {
+    const database = this.store.openWorld?.database
+    const worldPath = this.store.openWorld?.summary.path
+    if (!database || !worldPath) throw new Error("Nenhum mundo aberto.")
+    const id = this.seatCharacterId(seat.slotId)
+    const existingDocument = database.get(id)
+    const existing = existingDocument?.type === "seat-character" ? existingDocument.data as SeatCharacterData : null
+    if (existing?.mutationId === input.mutationId) return { ok: true, character: structuredClone(existing) }
+    if (input.baseRevision !== (existing?.revision ?? 0)) return { ok: false, character: existing ? structuredClone(existing) : null }
+
+    const raw = input.character && typeof input.character === "object" && !Array.isArray(input.character)
+      ? { ...(input.character as Record<string, unknown>), source: "tools" }
+      : input.character
+    const normalized = normalizeBridgeCharacter(raw)
+    const tokenImage = normalized.tokenImage ?? existing?.tokenImage ?? null
+    const tokenSize = normalized.tokenSize
+    const now = Date.now()
+    let tokenId = existing?.tokenId ?? null
+    let sceneId = existing?.sceneId ?? null
+    const scene = this.table.sceneId ? database.get(this.table.sceneId) : null
+    const sceneData = scene?.type === "scene" ? scene.data as SceneData : null
+    let tokenChange: DocumentChange | null = null
+    if (sceneData || tokenId) {
+      const previousToken = tokenId ? database.get(tokenId) : null
+      if (previousToken && previousToken.type !== "token") tokenId = null
+      if (!tokenId) {
+        const candidate = this.seatCharacterId(seat.slotId).replace("seat-character-", "seat-token-")
+        tokenId = database.get(candidate) ? `${candidate}-${randomUUID().replaceAll("-", "").slice(0, 12)}` : candidate
+      }
+      const token = tokenId ? database.get(tokenId) : null
+      const base = token?.type === "token" ? token.data as TokenData : normalizeToken({ name: normalized.summary.name, x: 0, y: 0, size: tokenSize, image: null, disposition: "player" })
+      const image = normalized.tokenImage ? decodeTokenImage(normalized.tokenImage) : null
+      const imagePath = image ? await importAsset(worldPath, "tokens", `token.${image.extension}`, image.bytes) : base.image
+      const position = token?.type === "token" ? { x: base.x, y: base.y } : snapTokenCenter(this.table.center ?? { x: sceneData?.width ? sceneData.width / 2 : 0, y: sceneData?.height ? sceneData.height / 2 : 0 }, tokenSize, sceneData?.grid ?? DEFAULT_GRID)
+      const data = normalizeToken({
+        ...base,
+        ...position,
+        name: normalized.summary.name,
+        size: tokenSize,
+        image: imagePath,
+        hidden: false,
+        locked: false,
+        disposition: "player",
+        bars: normalized.summary.bars.map((bar) => ({ ...bar, color: barColor(bar.label) })),
+        actor: { envelope: normalized.envelope, source: "tools", updatedAt: now },
+        playerSlotId: seat.slotId,
+      })
+      sceneId = token?.parentId ?? this.table.sceneId
+      tokenChange = putDocument(database, { id: tokenId, type: "token", parentId: sceneId, data }).change
+    }
+    const character: SeatCharacterData = { slotId: seat.slotId, tokenId, sceneId, envelope: normalized.envelope, summary: normalized.summary, tokenImage, tokenSize, revision: (existing?.revision ?? 0) + 1, updatedAt: now, mutationId: input.mutationId }
+    const documentChange = putDocument(database, { id, type: "seat-character", parentId: null, data: character }).change
+    this.seatWrites.add(seat.slotId)
+    try {
+      if (tokenChange) this.commit?.(tokenChange)
+      this.commit?.(documentChange)
+    } finally { this.seatWrites.delete(seat.slotId) }
+    this.session?.markAttached(seat.slotId, tokenId)
+    this.emit()
+    this.server.publishToSeat(seat.slotId, { type: "character-changed", revision: character.revision })
+    return { ok: true, character: structuredClone(character) }
+  }
+
+  private deleteSeatCharacter(seat: PlayerSeatConnection): void {
+    const database = this.store.openWorld?.database
+    if (!database) return
+    const character = this.getSeatCharacter(seat)
+    this.seatWrites.add(seat.slotId)
+    try {
+      if (character?.tokenId) {
+        const token = database.get(character.tokenId)
+        if (token?.type === "token") {
+          const change = deleteDocument(database, token.id)
+          if (change) this.commit?.(change)
+        }
+      }
+      const change = deleteDocument(database, this.seatCharacterId(seat.slotId))
+      if (change) this.commit?.(change)
+    } finally { this.seatWrites.delete(seat.slotId) }
+    this.session?.clearSeat(seat.slotId)
+    this.emit()
+    this.server.publishToSeat(seat.slotId, { type: "character-changed", revision: 0 })
+  }
+
+  /** Espelha alterações feitas pelo mestre na ficha privada do assento. */
+  private syncSeatCharacterFromToken(slotId: string, token: WorldDocument): void {
+    const database = this.store.openWorld?.database
+    if (!database || token.type !== "token") return
+    const tokenData = token.data as TokenData
+    if (!tokenData.actor) return
+    const existingDocument = database.get(this.seatCharacterId(slotId))
+    const existing = existingDocument?.type === "seat-character" ? existingDocument.data as SeatCharacterData : null
+    const summary: CharacterSummary = { name: tokenData.name, bars: tokenData.bars.map(({ label, value, max }) => ({ label, value, max })) }
+    const character: SeatCharacterData = {
+      slotId,
+      tokenId: token.id,
+      sceneId: token.parentId,
+      envelope: structuredClone(tokenData.actor.envelope),
+      summary,
+      tokenImage: existing?.tokenImage ?? null,
+      tokenSize: tokenData.size,
+      revision: (existing?.revision ?? 0) + 1,
+      updatedAt: Date.now(),
+      mutationId: null,
+    }
+    const change = putDocument(database, { id: this.seatCharacterId(slotId), type: "seat-character", parentId: null, data: character }).change
+    this.seatWrites.add(slotId)
+    try { this.commit?.(change) } finally { this.seatWrites.delete(slotId) }
+    this.session?.markAttached(slotId, token.id)
+    this.server.publishToSeat(slotId, { type: "character-changed", revision: character.revision })
+  }
+
+  private clearDeletedSeatTokens(ids: string[]): void {
+    const database = this.store.openWorld?.database
+    if (!database || ids.length === 0) return
+    const removed = new Set(ids)
+    for (const document of database.list("seat-character", null)) {
+      const data = document.data as SeatCharacterData
+      if (!data.tokenId || !removed.has(data.tokenId)) continue
+      if (this.seatWrites.has(data.slotId)) continue
+      const character: SeatCharacterData = { ...data, tokenId: null, sceneId: null, revision: data.revision + 1, updatedAt: Date.now(), mutationId: null }
+      const change = putDocument(database, { id: document.id, type: "seat-character", parentId: null, data: character }).change
+      this.seatWrites.add(data.slotId)
+      try { this.commit?.(change) } finally { this.seatWrites.delete(data.slotId) }
+      this.server.publishToSeat(data.slotId, { type: "character-changed", revision: character.revision })
+    }
+  }
+
+  private async attachPendingSeatCharacters(): Promise<void> {
+    if (!this.session || !this.table.sceneId) return
+    const database = this.store.openWorld?.database
+    if (!database) return
+    for (const document of database.list("seat-character", null)) {
+      const data = document.data as SeatCharacterData
+      if (data.tokenId) continue
+      const seat = this.session.getSeat(data.slotId)
+      if (!seat) continue
+      try {
+        await this.putSeatCharacter({ slotId: seat.slotId, label: seat.label }, { character: { envelope: data.envelope, summary: data.summary, source: "tools", tokenImage: data.tokenImage, tokenSize: data.tokenSize }, tokenId: null, baseRevision: data.revision, mutationId: `attach-${Date.now()}-${seat.slotId}` })
+      } catch { /* a ficha inválida fica guardada para o mestre corrigir */ }
+    }
   }
 
   async closeWorld(): Promise<void> {
@@ -157,6 +365,7 @@ export class PlayerTransmission {
     // Mover a câmera do mestre não mexe na dos jogadores; só trocar de cena
     // muda o que é transmitido (quando nenhuma cena foi fixada).
     if (sceneChanged && this.sceneId === null) this.publishSnapshot()
+    if (sceneChanged) void this.attachPendingSeatCharacters()
   }
 
   onDocumentChange(change: DocumentChange): void {
@@ -164,6 +373,12 @@ export class PlayerTransmission {
     // Rebuild from the database instead of forwarding `change`: projection is
     // the security boundary, including for bridge writes and deletes.
     if (change.kind === "put" && change.document.type === "log-entry") { this.publishFloat(change.document.data as LogData); return }
+    if (change.kind === "put" && change.document.type === "token") {
+      const data = change.document.data as TokenData
+      if (data.playerSlotId && !this.seatWrites.has(data.playerSlotId)) this.syncSeatCharacterFromToken(data.playerSlotId, change.document)
+    } else if (change.kind === "delete") {
+      this.clearDeletedSeatTokens(change.ids)
+    }
     if (change.kind === "put" || change.kind === "delete") this.publishSnapshot()
   }
 
@@ -218,7 +433,7 @@ export class PlayerTransmission {
   }
 
   /** Único pedido que um espectador pode fazer: mover um token "Jogador". */
-  handleClientMessage(value: unknown): PlayerWireMessage | null {
+  handleClientMessage(value: unknown, seat?: PlayerSeatConnection | null): PlayerWireMessage | null {
     const request = normalizeMoveRequest(value)
     if (!request) return null
     const reject = (reason: string): PlayerWireMessage => ({ type: "move-result", tokenId: request.tokenId, ok: false, reason })
@@ -227,6 +442,11 @@ export class PlayerTransmission {
     if (!database || !this.commit) return reject("Nenhum mundo aberto.")
     const result = validatePlayerMove(database, this.lastProjection.scene?.id ?? null, request)
     if (!result.ok) return reject(result.reason)
+    // A network client can move only the token attached to its own seat. The
+    // optional parameter keeps the pure unit-test entry point useful; the
+    // PlayerServer always supplies null for spectators and an identity for
+    // authenticated players.
+    if (seat !== undefined && (!seat || result.token.data.playerSlotId !== seat.slotId)) return reject("Esse token pertence a outro jogador.")
     this.commit(putDocument(database, { id: result.token.id, type: "token", parentId: result.token.parentId, data: result.token.data }).change)
     return { type: "move-result", tokenId: request.tokenId, ok: true }
   }
@@ -253,6 +473,10 @@ export class PlayerTransmission {
   }
 
   private emit(spectators = this.server.spectatorCount): void {
-    this.onStateChange({ ...this.state(), spectators })
+    this.onStateChange({ ...this.state(), spectators, players: this.playerCount })
+  }
+
+  private seatStates(codes: Record<string, string> = {}): PlayerSeatState[] {
+    return this.session?.snapshot().seats.map((seat) => ({ ...seat, ...(codes[seat.slotId] ? { code: codes[seat.slotId] } : {}) })) ?? []
   }
 }

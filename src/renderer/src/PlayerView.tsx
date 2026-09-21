@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react"
-import { Hand, Ruler, Volume2, VolumeX, ZoomIn, ZoomOut } from "lucide-react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
+import { ExternalLink, Hand, KeyRound, LoaderCircle, Ruler, Volume2, VolumeX, ZoomIn, ZoomOut } from "lucide-react"
 import type { SceneChildren } from "./document-store"
 import { configurePlayerAssets, resolveAssetUrl } from "./api"
 import { AudioEngine } from "./audio-engine"
@@ -13,6 +13,8 @@ import type { WorldDocument } from "../../shared/world"
 
 const BINDINGS = defaultKeyBindings()
 const VOLUME_KEY = "runas-vtt.player-volume"
+
+interface PlayerSeatIdentity { slotId: string; label: string }
 
 function readVolume(): number {
   try { const value = Number(localStorage.getItem(VOLUME_KEY)); return Number.isFinite(value) && localStorage.getItem(VOLUME_KEY) !== null ? Math.min(1, Math.max(0, value)) : 0.8 } catch { return 0.8 }
@@ -63,13 +65,25 @@ export function PlayerView() {
   const socket = useRef<WebSocket | null>(null)
   const [moves, setMoves] = useState(false)
   const [notice, setNotice] = useState("")
+  const transmissionKey = new URLSearchParams(location.search).get("k")
+  const [seat, setSeat] = useState<PlayerSeatIdentity | null>(null)
+  const [lobbyOpen, setLobbyOpen] = useState(Boolean(transmissionKey))
+  const [lobbyCode, setLobbyCode] = useState("")
+  const [joining, setJoining] = useState(false)
+  const [joinError, setJoinError] = useState("")
   const pendingRejects = useRef<{ tokenId: string; reason: string }[]>([])
 
   useEffect(() => {
-    const key = new URLSearchParams(location.search).get("k")
+    const key = transmissionKey
     if (!key) return
     configurePlayerAssets(`${location.origin}/assets/`, key)
     let disposed = false
+    void fetch(`/seat?k=${encodeURIComponent(key)}`, { credentials: "same-origin", cache: "no-store" }).then(async (response) => {
+      if (disposed) return
+      if (!response.ok) return
+      const body = await response.json() as { seat?: PlayerSeatIdentity }
+      if (body.seat) { setSeat(body.seat); setLobbyOpen(false) }
+    }).catch(() => undefined)
     const wsUrl = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/socket?k=${encodeURIComponent(key)}`
     const ws = new WebSocket(wsUrl)
     socket.current = ws
@@ -90,7 +104,29 @@ export function PlayerView() {
       setRevision((value) => value + 1)
     }
     return () => { disposed = true; socket.current = null; ws.close() }
-  }, [])
+  }, [transmissionKey])
+
+  async function joinSeat(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault()
+    if (!transmissionKey || !lobbyCode.trim()) return
+    setJoining(true)
+    setJoinError("")
+    try {
+      const response = await fetch(`/seat/join?k=${encodeURIComponent(transmissionKey)}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: lobbyCode.trim() }) })
+      const body = await response.json().catch(() => ({})) as { seat?: PlayerSeatIdentity; error?: string }
+      if (!response.ok || !body.seat) { setJoinError(body.error ?? "Não foi possível entrar com esse código."); return }
+      // O cookie só é aplicado ao próximo upgrade; recarregar reconecta a Vista
+      // já identificada e preserva a transmissão em outra aba se necessário.
+      location.reload()
+    } catch {
+      setJoinError("Não foi possível alcançar o servidor da mesa.")
+    } finally { setJoining(false) }
+  }
+
+  function openTools(): void {
+    if (!transmissionKey || !seat) return
+    window.open(`/tools/?k=${encodeURIComponent(transmissionKey)}`, "_blank", "noopener,noreferrer")
+  }
 
   useEffect(() => {
     const element = host.current
@@ -147,7 +183,12 @@ export function PlayerView() {
 
   useEffect(() => { view.current?.setTool(tool) }, [tool, ready])
   // Só tokens "Jogador", e só enquanto o mestre permitir.
-  useEffect(() => { view.current?.setMovable((document) => moves && document.type === "token" && (document.data as { disposition?: string }).disposition === "player") }, [moves, ready])
+  useEffect(() => {
+    view.current?.setMovable((document) => {
+      const data = document.data as { disposition?: string; playerSlotId?: string }
+      return moves && Boolean(seat) && document.type === "token" && data.disposition === "player" && data.playerSlotId === seat?.slotId
+    })
+  }, [moves, ready, seat])
   useEffect(() => {
     if (!notice) return
     const timer = window.setTimeout(() => setNotice(""), 3500)
@@ -176,6 +217,7 @@ export function PlayerView() {
       <span className="player-tools-divider" aria-hidden="true" />
       <button title="Aproximar (ou afaste dois dedos na tela)" aria-label="Aproximar" onClick={() => view.current?.zoomBy(1.25)}><ZoomIn size={17} /></button>
       <button title="Afastar (ou aproxime dois dedos na tela)" aria-label="Afastar" onClick={() => view.current?.zoomBy(0.8)}><ZoomOut size={17} /></button>
+      {seat && <><span className="player-tools-divider" aria-hidden="true" /><button title="Abrir Runas Tools" aria-label="Abrir Runas Tools" onClick={openTools}><ExternalLink size={17} /></button></>}
     </nav>}
     {connected && <div className="player-audio">
       {soundOn
@@ -184,5 +226,7 @@ export function PlayerView() {
     </div>}
     {notice && <div className="player-notice" role="status">{notice}</div>}
     {!connected && <div className="player-status">Aguardando a transmissão…</div>}
+    {lobbyOpen && <div className="player-lobby"><div className="player-lobby-card"><KeyRound size={26} className="player-lobby-icon" /><h1>Entrar como jogador</h1><p>Insira o código que o mestre entregou para liberar o Runas Tools e vincular sua ficha à mesa.</p><form onSubmit={(event) => void joinSeat(event)}><label><span>Código do jogador</span><input autoFocus value={lobbyCode} onChange={(event) => setLobbyCode(event.target.value.toUpperCase())} placeholder="ABCD-EFGH" autoComplete="one-time-code" maxLength={32} /></label><button className="primary" type="submit" disabled={joining || !lobbyCode.trim()}>{joining ? <><LoaderCircle size={15} className="spin" /> Entrando…</> : <><KeyRound size={15} /> Entrar na mesa</>}</button></form>{joinError && <div className="player-lobby-error" role="alert">{joinError}</div>}<button className="ghost" onClick={() => setLobbyOpen(false)}>Continuar como espectador</button></div></div>}
+    {seat && <div className="player-seat-badge"><span>Você está como <strong>{seat.label}</strong></span><button className="ghost small" onClick={openTools}><ExternalLink size={13} /> Abrir Runas Tools</button></div>}
   </main>
 }

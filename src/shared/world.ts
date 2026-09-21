@@ -65,6 +65,8 @@ export const DOCUMENT_TYPES = [
   "playlist",
   "track",
   "log-entry",
+  /** Ficha persistida de um assento da transmissão (Fase 10). */
+  "seat-character",
 ] as const
 
 export type DocumentType = (typeof DOCUMENT_TYPES)[number]
