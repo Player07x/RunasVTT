@@ -26,6 +26,7 @@ export const IPC = {
   documentsList: "documents:list",
   documentsPut: "documents:put",
   documentsDelete: "documents:delete",
+  documentsClearLog: "documents:clear-log",
   documentsChanged: "documents:changed",
   assetsImport: "assets:import",
   tableReport: "table:report",
@@ -231,6 +232,8 @@ export interface VttApi {
     list(type: DocumentType, parentId?: string | null): Promise<WorldDocument[]>
     put(input: DocumentInput): Promise<WorldDocument>
     remove(id: string): Promise<void>
+    /** Apaga o Registro inteiro; devolve quantas entradas saíram. */
+    clearLog(): Promise<number>
     onChange(listener: (change: DocumentChange) => void): () => void
   }
   table: {

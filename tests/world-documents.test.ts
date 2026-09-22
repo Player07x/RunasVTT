@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { assetResponse, importAsset, resolveAssetFile } from "../src/main/world-assets"
 import { WorldDatabase } from "../src/main/world-database"
-import { deleteDocument, putDocument } from "../src/main/world-documents"
+import { clearLog, deleteDocument, putDocument } from "../src/main/world-documents"
 import { normalizeScene, normalizeToken, type SceneData, type TokenData } from "../src/shared/scene"
 
 let dir: string
@@ -103,5 +103,30 @@ describe("assetResponse", () => {
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
     expect((await assetResponse(dir, "../world.db")).status).toBe(404)
     expect((await assetResponse(dir, `tokens/${"b".repeat(64)}.png`)).status).toBe(404)
+  })
+})
+
+/**
+ * O Registro cresce a sessão inteira e nada o poda sozinho. A limpeza sai
+ * numa mudança só: com a transmissão ligada, um `delete` por entrada
+ * republicaria a projeção inteira centenas de vezes.
+ */
+describe("limpar o Registro", () => {
+  it("apaga todas as entradas em uma única mudança e não toca no resto", () => {
+    for (let index = 0; index < 5; index += 1) {
+      putDocument(database, { id: `log-${index}`, type: "log-entry", parentId: null, data: { kind: "test", title: `Teste ${index}`, detail: "", tokenId: null, tokenName: "", floatingText: "" } })
+    }
+    putDocument(database, { id: "cena-1", type: "scene", parentId: null, data: normalizeScene({ name: "Cena" } as Partial<SceneData>) })
+    expect(database.list("log-entry", null)).toHaveLength(5)
+
+    const change = clearLog(database)
+    expect(change?.kind).toBe("delete")
+    expect(change?.ids).toHaveLength(5)
+    expect(database.list("log-entry", null)).toHaveLength(0)
+    expect(database.get("cena-1")).toBeTruthy()
+  })
+
+  it("não devolve mudança quando o Registro já está vazio", () => {
+    expect(clearLog(database)).toBeNull()
   })
 })

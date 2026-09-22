@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { runInNewContext } from "node:vm"
-import { PlayerServer, withSeatBridge } from "../src/main/player-server"
+import { PlayerServer, cacheControlForTools, withSeatBridge } from "../src/main/player-server"
 import { SEAT_BRIDGE_SCRIPT } from "../src/player/seat-bridge"
 import type { PlayerProjection } from "../src/shared/player"
 import { SiteMirror } from "../src/main/site-mirror"
@@ -137,5 +137,58 @@ describe("injeção do shim no HTML do Tools", () => {
     const once = withSeatBridge("<head></head>")
     expect(withSeatBridge(once)).toBe(once)
     expect(withSeatBridge('<body><script src="/app.js"></script></body>')).toContain('<body><script src="/tools/runas-vtt-seat.js"></script><script src="/app.js">')
+  })
+})
+
+/**
+ * O jogador remoto baixa o Tools pelo túnel, contra o upload da casa do
+ * mestre. Sem validador, `no-cache` fazia cada navegação dentro do Tools
+ * rebaixar todo o JavaScript.
+ */
+describe("cache do Tools servido ao assento", () => {
+  it("guarda para sempre o que tem hash no nome e revalida o resto", () => {
+    expect(cacheControlForTools("/_next/static/chunks/ficha.js")).toBe("public, max-age=31536000, immutable")
+    expect(cacheControlForTools("/_next/static/media/fonte.woff2")).toBe("public, max-age=31536000, immutable")
+    expect(cacheControlForTools("/galeria-personagens/")).toBe("no-cache")
+    expect(cacheControlForTools("/")).toBe("no-cache")
+  })
+
+  it("responde 304 para um arquivo já em cache no jogador", async () => {
+    const root = join(tmpdir(), `runas-vtt-cache-${Date.now()}`)
+    await mkdir(root, { recursive: true })
+    await writeFile(join(root, "player.html"), "<h1>player</h1>")
+    const mirror = new SiteMirror(join(root, "mirror.db"))
+    mirror.put("https://runas-tools.pages.dev/_next/static/chunks/app.js", 200, new Headers({ "content-type": "text/javascript" }), new TextEncoder().encode("console.log('tools')"))
+    mirrors.push(mirror)
+    const server = new PlayerServer({
+      staticRoot: root, toolsMirror: mirror, worldPath: () => null, projection: () => projection,
+      snapshot: () => ({ type: "snapshot", projection, ruler: null, audio: null, moves: false }),
+      onSpectators: () => undefined,
+      joinSeat: (code) => (code === "ABCD-EFGH" ? { seat: { slotId: "player-1", label: "Jogador 1" }, token: "token-secreto" } : null),
+      authenticateSeat: (token) => (token === "token-secreto" ? { slotId: "player-1", label: "Jogador 1" } : null),
+    })
+    servers.push(server)
+    await server.start(0, "chave")
+    const base = `http://127.0.0.1:${server.addressPort}`
+    const joined = await fetch(`${base}/seat/join?k=chave`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: "ABCD-EFGH" }) })
+    const cookie = joined.headers.get("set-cookie")?.split(";")[0] ?? ""
+    const headers = { cookie, referer: `${base}/tools/` }
+
+    const first = await fetch(`${base}/_next/static/chunks/app.js`, { headers })
+    expect(first.status).toBe(200)
+    expect(first.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+    const etag = first.headers.get("etag")
+    expect(etag).toBeTruthy()
+    await first.arrayBuffer()
+
+    const second = await fetch(`${base}/_next/static/chunks/app.js`, { headers: { ...headers, "if-none-match": etag ?? "" } })
+    expect(second.status).toBe(304)
+    expect((await second.arrayBuffer()).byteLength).toBe(0)
+
+    await server.stop()
+    servers.splice(servers.indexOf(server), 1)
+    mirror.close()
+    mirrors.splice(mirrors.indexOf(mirror), 1)
+    await rm(root, { recursive: true, force: true })
   })
 })

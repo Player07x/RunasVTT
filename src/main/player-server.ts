@@ -97,6 +97,17 @@ const CONTENT_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
 }
 
+/**
+ * Cache dos arquivos do Tools servidos ao jogador.
+ *
+ * `/_next/static/` tem hash no nome: o conteúdo de um nome nunca muda, então
+ * vale guardar para sempre. O HTML muda a cada publicação e fica com
+ * revalidação, que o ETag resolve num 304.
+ */
+export function cacheControlForTools(pathname: string): string {
+  return pathname.startsWith("/_next/static/") ? "public, max-age=31536000, immutable" : "no-cache"
+}
+
 const SEAT_BRIDGE_TAG = '<script src="/tools/runas-vtt-seat.js"></script>'
 
 /**
@@ -453,7 +464,18 @@ export class PlayerServer {
     if (entry.contentType.includes("text/html")) {
       body = Buffer.from(withSeatBridge(body.toString("utf8")))
     }
-    response.writeHead(entry.status, { "content-type": entry.contentType, "content-length": body.length, "cache-control": "no-cache", "x-runas-vtt-source": "mirror" })
+    // O jogador remoto baixa isto pelo túnel, contra o upload da casa do
+    // mestre. Sem validador, `no-cache` obrigava a rebaixar cada arquivo a
+    // cada navegação dentro do Tools. Os arquivos de `/_next/static/` têm
+    // hash no nome e nunca mudam de conteúdo; o resto ganha um ETag, para
+    // revalidar com um 304 em vez do corpo inteiro.
+    const etag = `"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"`
+    if (request.headers["if-none-match"] === etag) {
+      response.writeHead(304, { etag, "cache-control": cacheControlForTools(original.pathname) })
+      response.end()
+      return
+    }
+    response.writeHead(entry.status, { "content-type": entry.contentType, "content-length": body.length, "cache-control": cacheControlForTools(original.pathname), etag, "x-runas-vtt-source": "mirror" })
     if (request.method === "HEAD") { response.end(); return }
     response.end(body)
   }

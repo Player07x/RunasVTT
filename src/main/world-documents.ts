@@ -45,6 +45,20 @@ export function deleteDocument(database: WorldDatabase, id: string): DocumentCha
   return { kind: "delete", ids }
 }
 
+/**
+ * Apaga todo o Registro em uma única mudança.
+ *
+ * Uma sessão longa acumula centenas de entradas, e cada `delete` avulso
+ * republicaria a projeção inteira para os jogadores (`onDocumentChange`).
+ * Uma mudança só mantém a limpeza barata mesmo com a transmissão ligada.
+ */
+export function clearLog(database: WorldDatabase): (DocumentChange & { kind: "delete" }) | null {
+  const ids = database.list("log-entry", null).map((document) => document.id)
+  if (ids.length === 0) return null
+  for (const id of ids) database.delete(id)
+  return { kind: "delete", ids }
+}
+
 export function listDocuments(database: WorldDatabase, type: DocumentType, parentId?: string | null): WorldDocument[] {
   if (!isDocumentType(type)) throw new Error("Tipo de documento inválido.")
   return database.list(type, parentId)

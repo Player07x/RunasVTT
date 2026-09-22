@@ -22,6 +22,7 @@ const api: VttApi = {
     list: (type, parentId) => ipcRenderer.invoke(IPC.documentsList, type, parentId),
     put: (input) => ipcRenderer.invoke(IPC.documentsPut, input),
     remove: (id) => ipcRenderer.invoke(IPC.documentsDelete, id),
+    clearLog: () => ipcRenderer.invoke(IPC.documentsClearLog),
     onChange: (listener) => {
       const handler = (_event: unknown, change: DocumentChange) => listener(change)
       ipcRenderer.on(IPC.documentsChanged, handler)

@@ -42,9 +42,17 @@ export const SEAT_BRIDGE_SCRIPT = String.raw`(() => {
   const protocol = 1;
   const key = new URLSearchParams(location.search).get("k") || "";
   const listeners = new Set();
+  /** Janela em que uma leitura recém-feita é reaproveitada, em milissegundos. */
+  const FRESH_MS = 1000;
+  /** Sem WebSocket vivo, com que frequência perguntar pela ficha. */
+  const POLL_MS = 2500;
   let revision = 0;
   let socket = null;
   let poll = null;
+  let cached = null;
+  let inFlight = null;
+  /** Última revisão já anunciada a quem escuta. */
+  let notified = -1;
 
   function url(path) {
     const separator = path.includes("?") ? "&" : "?";
@@ -64,14 +72,43 @@ export const SEAT_BRIDGE_SCRIPT = String.raw`(() => {
     return body;
   }
 
-  async function readCharacter() {
-    const body = await request("/seat/character");
-    const character = body && body.character ? body.character : null;
+  function cache(character) {
+    cached = { character: character, at: Date.now() };
     if (character && typeof character.revision === "number") revision = character.revision;
-    return character;
+  }
+
+  function invalidate() { cached = null; inFlight = null; }
+
+  /**
+   * Uma leitura por vez e uma resposta reaproveitada por FRESH_MS.
+   *
+   * O Runas Tools chama getTokens() de vários efeitos durante uma interação —
+   * abrir a ficha, o autosave buscando o id do token —, e sem isto cada
+   * chamada virava um GET. O cache é derrubado por invalidate() sempre que a
+   * ficha pode ter mudado (aviso do WebSocket, PUT aceito, conflito), então
+   * ninguém lê uma versão vencida.
+   */
+  function readCharacter(force) {
+    if (!force && cached && Date.now() - cached.at < FRESH_MS) return Promise.resolve(cached.character);
+    if (!force && inFlight) return inFlight;
+    const promise = request("/seat/character").then((body) => {
+      const character = body && body.character ? body.character : null;
+      cache(character);
+      return character;
+    });
+    inFlight = promise;
+    promise.catch(() => undefined).then(() => { if (inFlight === promise) inFlight = null; });
+    return promise;
   }
 
   function notify() { listeners.forEach((listener) => { try { listener(); } catch (_) {} }); }
+
+  /** Avisa só quando a revisão mudou de verdade: cada aviso custa uma leitura a quem escuta. */
+  function notifyIfChanged(nextRevision) {
+    if (typeof nextRevision !== "number" || nextRevision === notified) return;
+    notified = nextRevision;
+    notify();
+  }
 
   function connect() {
     if (socket || !key) return;
@@ -82,7 +119,8 @@ export const SEAT_BRIDGE_SCRIPT = String.raw`(() => {
         const message = JSON.parse(String(event.data));
         if (message.type === "character-changed" && typeof message.revision === "number") {
           revision = message.revision;
-          notify();
+          invalidate();
+          notifyIfChanged(message.revision);
         }
       } catch (_) { /* mensagens da projeção não pertencem ao shim */ }
     };
@@ -90,12 +128,24 @@ export const SEAT_BRIDGE_SCRIPT = String.raw`(() => {
   }
 
   async function save(character, tokenId) {
-    const body = await request("/seat/character", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ character, tokenId: tokenId || null, baseRevision: revision, mutationId: crypto.randomUUID() })
-    });
-    if (body && body.character && typeof body.character.revision === "number") revision = body.character.revision;
+    let body;
+    try {
+      body = await request("/seat/character", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ character, tokenId: tokenId || null, baseRevision: revision, mutationId: crypto.randomUUID() })
+      });
+    } catch (error) {
+      // Conflito (409) traz a versão da mesa; de todo modo o que estava em
+      // cache não vale mais.
+      invalidate();
+      if (error && error.body && error.body.character) cache(error.body.character);
+      throw error;
+    }
+    // A resposta já é a ficha nova: guardá-la evita que o aviso abaixo
+    // provoque uma releitura imediata do que acabamos de receber.
+    if (body && body.character) { cache(body.character); notified = body.character.revision; }
+    else invalidate();
     notify();
     return body;
   }
@@ -116,7 +166,15 @@ export const SEAT_BRIDGE_SCRIPT = String.raw`(() => {
     onTokensChanged: (listener) => {
       listeners.add(listener);
       connect();
-      if (!poll) poll = setInterval(() => { void readCharacter().then(() => notify()).catch(() => undefined); }, 2500);
+      // A sondagem é a rede de segurança de quando o WebSocket cai; com ele
+      // aberto, o aviso "character-changed" já chega e perguntar de novo a
+      // cada 2,5 s só gasta bateria e dados do jogador. Cada volta também
+      // tenta reabrir o socket fechado.
+      if (!poll) poll = setInterval(() => {
+        if (socket && socket.readyState === 1) return;
+        connect();
+        void readCharacter(true).then((character) => { notifyIfChanged(character ? character.revision : -1); }).catch(() => undefined);
+      }, POLL_MS);
       return () => {
         listeners.delete(listener);
         if (!listeners.size && poll) { clearInterval(poll); poll = null; }

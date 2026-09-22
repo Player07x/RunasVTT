@@ -7,7 +7,7 @@ import { BridgeHub } from "./bridge-ipc"
 import { BrowserManager, openSiteMirror } from "./browser"
 import { runBrowserSmokeTest, runSeedSites } from "./browser-tasks"
 import { assetResponse, importAsset } from "./world-assets"
-import { deleteDocument, listDocuments, putDocument } from "./world-documents"
+import { clearLog, deleteDocument, listDocuments, putDocument } from "./world-documents"
 import { WorldStore } from "./world-store"
 import { PlayerTransmission } from "./player-transmission"
 import { ensureCloudflared, publicPlayerUrl, startCloudflared } from "./cloudflared"
@@ -172,6 +172,11 @@ function registerDocumentIpc(store: WorldStore): void {
   ipcMain.handle(IPC.documentsDelete, (_event, id: string) => {
     const change = deleteDocument(requireOpenWorld(store).database, id)
     if (change) broadcast(change)
+  })
+  ipcMain.handle(IPC.documentsClearLog, () => {
+    const change = clearLog(requireOpenWorld(store).database)
+    if (change) broadcast(change)
+    return change ? change.ids.length : 0
   })
   ipcMain.handle(IPC.assetsImport, (_event, kind: AssetKind, fileName: string, bytes: Uint8Array) => {
     if (!(ASSET_KINDS as readonly string[]).includes(kind)) throw new Error("Tipo de asset inválido.")

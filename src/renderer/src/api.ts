@@ -78,6 +78,13 @@ function createBrowserPreviewApi(): VttApi {
         ids.forEach((candidate) => documents.delete(candidate))
         documentListeners.forEach((listener) => listener({ kind: "delete", ids }))
       },
+      clearLog: async () => {
+        const ids = [...documents.values()].filter((document) => document.type === "log-entry").map((document) => document.id)
+        if (ids.length === 0) return 0
+        ids.forEach((candidate) => documents.delete(candidate))
+        documentListeners.forEach((listener) => listener({ kind: "delete", ids }))
+        return ids.length
+      },
       onChange: (listener) => { documentListeners.add(listener); return () => { documentListeners.delete(listener) } },
     },
     table: { report: async () => undefined },
