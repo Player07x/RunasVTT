@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { PlayerTransmission } from "../src/main/player-transmission"
+import { PlayerTransmission, sameSeatCharacter } from "../src/main/player-transmission"
 import { putDocument } from "../src/main/world-documents"
 import { WorldStore } from "../src/main/world-store"
 import type { PlayerWireMessage } from "../src/shared/player"
@@ -84,5 +84,71 @@ describe("transmissão da Vista dos Jogadores", () => {
     expect(store.openWorld?.database.list("seat-character", null)).toHaveLength(1)
     expect(store.openWorld?.database.list("token", "cena").some((document) => (document.data as { playerSlotId?: string }).playerSlotId === "player-1")).toBe(true)
     await transmission.stop()
+  })
+})
+
+/**
+ * A ficha do assento é reescrita a cada gravação do token — e mover no mapa é
+ * uma gravação. Subir a revisão nessa hora derrubava o que o jogador estava
+ * digitando e fazia o envio seguinte voltar 409. Como o jogador move o próprio
+ * token (ADR 0017), ele apagava a própria ficha ao andar.
+ */
+describe("ficha do assento contra movimento do token", () => {
+  /** Um token de jogador com ficha anexada, como o envio do assento cria. */
+  function anexarFicha() {
+    const database = store.openWorld!.database
+    const actor = { envelope: { version: 23, character: { name: "Jogador 1" } }, summary: { name: "Jogador 1", bars: [] }, source: "tools", tokenImage: null, tokenSize: 1 }
+    const { change } = putDocument(database, { id: "token-jogador", type: "token", parentId: "cena", data: { name: "Jogador 1", playerSlotId: "player-1", actor, x: 0, y: 0 } })
+    transmission.onDocumentChange(change)
+    const documento = database.get("seat-character-player-1")
+    return { database, actor, revisao: (documento?.data as { revision: number } | undefined)?.revision ?? 0 }
+  }
+
+  it("mover o token não muda a ficha nem a revisão", () => {
+    const { database, actor, revisao } = anexarFicha()
+    expect(revisao).toBeGreaterThan(0)
+
+    // Só a posição muda, como num arraste no mapa.
+    const { change } = putDocument(database, { id: "token-jogador", type: "token", parentId: "cena", data: { name: "Jogador 1", playerSlotId: "player-1", actor, x: 320, y: 180 } })
+    transmission.onDocumentChange(change)
+
+    const depois = database.get("seat-character-player-1")?.data as { revision: number }
+    expect(depois.revision).toBe(revisao)
+  })
+
+  it("mas uma alteração de verdade na ficha continua chegando ao jogador", () => {
+    const { database, revisao } = anexarFicha()
+    const editado = { envelope: { version: 23, character: { name: "Jogador 1 (ferido)" } }, summary: { name: "Jogador 1", bars: [] }, source: "tools", tokenImage: null, tokenSize: 1 }
+    const { change } = putDocument(database, { id: "token-jogador", type: "token", parentId: "cena", data: { name: "Jogador 1", playerSlotId: "player-1", actor: editado, x: 320, y: 180 } })
+    transmission.onDocumentChange(change)
+
+    const depois = database.get("seat-character-player-1")?.data as { revision: number }
+    expect(depois.revision).toBe(revisao + 1)
+  })
+
+  const base = {
+    slotId: "player-1",
+    tokenId: "token-1",
+    sceneId: "cena-1",
+    envelope: { version: 23, character: { name: "Jogador 1" } },
+    summary: { name: "Jogador 1", bars: [{ label: "PV", value: 10, max: 10 }] },
+    tokenImage: null,
+    tokenSize: 1,
+    revision: 4,
+    updatedAt: 1000,
+    mutationId: "abc",
+  }
+
+  it("ignora revisão, horário e mutação: eles mudam a cada gravação", () => {
+    expect(sameSeatCharacter(base, { ...base, revision: 99, updatedAt: 5000, mutationId: "outro" })).toBe(true)
+  })
+
+  it("reconhece o que pertence de fato à ficha", () => {
+    expect(sameSeatCharacter(base, { ...base, envelope: { version: 23, character: { name: "Outro" } } })).toBe(false)
+    expect(sameSeatCharacter(base, { ...base, summary: { name: "Jogador 1", bars: [{ label: "PV", value: 3, max: 10 }] } })).toBe(false)
+    expect(sameSeatCharacter(base, { ...base, tokenSize: 2 })).toBe(false)
+    expect(sameSeatCharacter(base, { ...base, sceneId: "cena-2" })).toBe(false)
+    expect(sameSeatCharacter(base, { ...base, tokenId: "token-2" })).toBe(false)
+    expect(sameSeatCharacter(base, { ...base, tokenImage: "data:image/png;base64,AA" })).toBe(false)
   })
 })

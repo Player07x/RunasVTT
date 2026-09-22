@@ -22,6 +22,21 @@ import { randomUUID } from "node:crypto"
 
 const DEFAULT_PORT = 30000
 
+/**
+ * Duas versões da ficha do assento são a mesma coisa?
+ *
+ * Compara só o que pertence à ficha. `revision` e `updatedAt` mudam a cada
+ * gravação e não contam; `mutationId` identifica a escrita, não o conteúdo.
+ */
+export function sameSeatCharacter(left: SeatCharacterData, right: SeatCharacterData): boolean {
+  return left.tokenId === right.tokenId
+    && left.sceneId === right.sceneId
+    && left.tokenSize === right.tokenSize
+    && left.tokenImage === right.tokenImage
+    && JSON.stringify(left.summary) === JSON.stringify(right.summary)
+    && JSON.stringify(left.envelope) === JSON.stringify(right.envelope)
+}
+
 function localAddress(): string {
   for (const entries of Object.values(networkInterfaces())) {
     for (const entry of entries ?? []) {
@@ -247,7 +262,16 @@ export class PlayerTransmission {
     this.server.publishToSeat(seat.slotId, { type: "character-changed", revision: 0 })
   }
 
-  /** Espelha alterações feitas pelo mestre na ficha privada do assento. */
+  /**
+   * Espelha alterações feitas pelo mestre na ficha privada do assento.
+   *
+   * Só quando a ficha muda de verdade. Esta função é chamada a cada gravação
+   * do token — inclusive **um movimento no mapa** —, e antes ela reescrevia a
+   * ficha e subia a revisão toda vez. O efeito no jogador era destrutivo: o
+   * aviso derrubava o que ele estava digitando, e o `PUT` seguinte chegava com
+   * `baseRevision` velho e voltava 409. Como o jogador move o próprio token
+   * (ADR 0017), ele apagava a própria ficha ao andar.
+   */
   private syncSeatCharacterFromToken(slotId: string, token: WorldDocument): void {
     const database = this.store.openWorld?.database
     if (!database || token.type !== "token") return
@@ -267,6 +291,12 @@ export class PlayerTransmission {
       revision: (existing?.revision ?? 0) + 1,
       updatedAt: Date.now(),
       mutationId: null,
+    }
+    if (existing && sameSeatCharacter(existing, character)) {
+      // Nada da ficha mudou: posição, rotação e o resto do token não são dela.
+      // Ainda assim o vínculo com o token precisa continuar registrado.
+      this.session?.markAttached(slotId, token.id)
+      return
     }
     const change = putDocument(database, { id: this.seatCharacterId(slotId), type: "seat-character", parentId: null, data: character }).change
     this.seatWrites.add(slotId)
