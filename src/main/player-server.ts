@@ -97,6 +97,29 @@ const CONTENT_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
 }
 
+const SEAT_BRIDGE_TAG = '<script src="/tools/runas-vtt-seat.js"></script>'
+
+/**
+ * Injeta o shim da ponte logo depois da abertura do `<head>`.
+ *
+ * A posição importa: o shim repõe `crypto.randomUUID`, que o navegador
+ * esconde fora de contexto seguro, e o Runas Tools chama essa função já na
+ * hidratação. Antes de `</head>` o shim rodaria depois dos scripts do Tools e
+ * o jogador da rede local veria o erro assim mesmo.
+ */
+export function withSeatBridge(html: string): string {
+  if (html.includes("/tools/runas-vtt-seat.js")) return html
+  const head = /<head[^>]*>/i.exec(html)
+  if (head) {
+    const at = head.index + head[0].length
+    return `${html.slice(0, at)}${SEAT_BRIDGE_TAG}${html.slice(at)}`
+  }
+  // Sem `<head>` escrito: antes do primeiro script, ou no começo do documento.
+  const script = /<script\b/i.exec(html)
+  if (script) return `${html.slice(0, script.index)}${SEAT_BRIDGE_TAG}${html.slice(script.index)}`
+  return `${SEAT_BRIDGE_TAG}${html}`
+}
+
 function json(res: ServerResponse, status: number, body: unknown, cors = true, extra: Record<string, string> = {}): void {
   const bytes = Buffer.from(JSON.stringify(body))
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": bytes.length, "cache-control": "no-store", ...(cors ? { "access-control-allow-origin": "*" } : {}), ...extra })
@@ -428,9 +451,7 @@ export class PlayerServer {
     if (!entry) { response.writeHead(404, { "cache-control": "no-store" }); response.end(); return }
     let body = Buffer.from(entry.body)
     if (entry.contentType.includes("text/html")) {
-      const html = body.toString("utf8")
-      const script = '<script src="/tools/runas-vtt-seat.js"></script>'
-      body = Buffer.from(html.includes("/tools/runas-vtt-seat.js") ? html : html.replace(/<\/head>/i, `${script}</head>`))
+      body = Buffer.from(withSeatBridge(body.toString("utf8")))
     }
     response.writeHead(entry.status, { "content-type": entry.contentType, "content-length": body.length, "cache-control": "no-cache", "x-runas-vtt-source": "mirror" })
     if (request.method === "HEAD") { response.end(); return }

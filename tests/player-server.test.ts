@@ -2,7 +2,9 @@ import { mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { PlayerServer } from "../src/main/player-server"
+import { runInNewContext } from "node:vm"
+import { PlayerServer, withSeatBridge } from "../src/main/player-server"
+import { SEAT_BRIDGE_SCRIPT } from "../src/player/seat-bridge"
 import type { PlayerProjection } from "../src/shared/player"
 import { SiteMirror } from "../src/main/site-mirror"
 
@@ -91,5 +93,49 @@ describe("servidor da Vista dos Jogadores", () => {
     mirror.close()
     mirrors.splice(mirrors.indexOf(mirror), 1)
     await rm(root, { recursive: true, force: true })
+  })
+})
+
+/**
+ * O assento vive em `http://IP:porta`, que não é contexto seguro, e o
+ * navegador esconde `crypto.randomUUID` aí. Só `127.0.0.1` escapa — por isso
+ * a janela local do mestre funcionava e o jogador da rede local recebia
+ * "crypto.randomUUID is not a function" ao importar uma ficha.
+ */
+describe("shim do assento", () => {
+  /** Roda o script do shim num contexto sem `randomUUID`, como o do jogador. */
+  function run(crypto: Record<string, unknown>): Record<string, unknown> {
+    const context = { crypto, window: {} as Record<string, unknown>, location: { search: "", protocol: "http:", host: "192.168.0.2:30000" }, URLSearchParams, Set, Uint8Array, Object, WebSocket: class {}, fetch: async () => new Response(), setInterval: () => 0, clearInterval: () => undefined }
+    runInNewContext(SEAT_BRIDGE_SCRIPT, context)
+    return context.crypto
+  }
+
+  const getRandomValues = (array: Uint8Array) => { for (let index = 0; index < array.length; index += 1) array[index] = (index * 37 + 11) % 256; return array }
+
+  it("repõe crypto.randomUUID com um UUID v4 válido fora de contexto seguro", () => {
+    const crypto = run({ getRandomValues })
+    expect(typeof crypto.randomUUID).toBe("function")
+    expect((crypto.randomUUID as () => string)()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  })
+
+  it("não substitui a implementação nativa quando ela existe", () => {
+    const native = () => "nativo"
+    expect(run({ getRandomValues, randomUUID: native }).randomUUID).toBe(native)
+  })
+})
+
+describe("injeção do shim no HTML do Tools", () => {
+  it("entra no começo do head, antes dos scripts do Tools", () => {
+    const html = '<!doctype html><html><head><script src="/_next/static/chunks/app.js"></script></head><body></body></html>'
+    const injected = withSeatBridge(html)
+    expect(injected.indexOf("runas-vtt-seat.js")).toBeLessThan(injected.indexOf("/_next/static/chunks/app.js"))
+    expect(injected).toContain('<head><script src="/tools/runas-vtt-seat.js"></script>')
+  })
+
+  it("aceita atributos no head, não injeta duas vezes e tem saída sem head", () => {
+    expect(withSeatBridge('<head lang="pt-BR"><title>x</title></head>')).toContain('<head lang="pt-BR"><script src="/tools/runas-vtt-seat.js"></script>')
+    const once = withSeatBridge("<head></head>")
+    expect(withSeatBridge(once)).toBe(once)
+    expect(withSeatBridge('<body><script src="/app.js"></script></body>')).toContain('<body><script src="/tools/runas-vtt-seat.js"></script><script src="/app.js">')
   })
 })

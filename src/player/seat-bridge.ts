@@ -2,8 +2,43 @@
  * Shim mínimo da ponte RunasVTT para a origem efêmera do Runas Tools servido
  * pelo PlayerServer. Ele usa HTTP para o envelope (que pode ter megabytes) e
  * WebSocket somente para avisos curtos de mudança.
+ *
+ * O primeiro bloco repõe `crypto.randomUUID`. O assento vive em
+ * `http://IP:porta`, que não é contexto seguro, e o navegador esconde
+ * `randomUUID` fora de contexto seguro — só `127.0.0.1` escapa, que é
+ * justamente a janela local do mestre. O Runas Tools chama `randomUUID` ao
+ * importar, salvar e criar fichas, e este shim o chama no `mutationId`: sem a
+ * reposição, o jogador da rede local recebe "crypto.randomUUID is not a
+ * function". `getRandomValues` continua disponível e dá a mesma aleatoriedade.
+ *
+ * Por isso o `PlayerServer` injeta este script no começo do `<head>`: ele
+ * precisa rodar antes de qualquer código do Tools.
  */
 export const SEAT_BRIDGE_SCRIPT = String.raw`(() => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID !== "function" && typeof crypto.getRandomValues === "function") {
+    const byteToHex = [];
+    for (let index = 0; index < 256; index += 1) byteToHex.push((index + 0x100).toString(16).slice(1));
+    const randomUUID = function randomUUID() {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      // Versão 4 e variante RFC 4122, como manda a especificação.
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      let text = "";
+      for (let index = 0; index < 16; index += 1) {
+        if (index === 4 || index === 6 || index === 8 || index === 10) text += "-";
+        text += byteToHex[bytes[index]];
+      }
+      return text;
+    };
+    try {
+      Object.defineProperty(crypto, "randomUUID", { value: randomUUID, configurable: true, writable: true });
+    } catch (_) {
+      crypto.randomUUID = randomUUID;
+    }
+  }
+})();
+
+(() => {
   const protocol = 1;
   const key = new URLSearchParams(location.search).get("k") || "";
   const listeners = new Set();
